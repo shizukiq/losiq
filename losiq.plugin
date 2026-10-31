@@ -1,9 +1,12 @@
+import math
 import random
 import time
 from typing import Any, List
 
-from android.graphics import Bitmap, Canvas, Paint
+from android.content import Context
+from android.graphics import Bitmap, Canvas, Paint, Rect
 from android.graphics.drawable import GradientDrawable
+from android.hardware import SensorEventListener, SensorManager
 from android.os import Handler, Looper
 from android.util import TypedValue
 from android.view import MotionEvent, View
@@ -22,10 +25,12 @@ __name__ = "ЛУЗ1К (Sketch Pet)"
 __description__ = (
     "Экранный питомец ЛУЗ1К в скетч-стиле.\n\n"
     "**Тап** — тычок и фраза, **двойной тап** — RAGE-режим (красные глаза), "
-    "**спам тапами** — вывести из себя, **перетаскивание** — перенести по экрану."
+    "**спам тапами** — вывести из себя, **перетаскивание** — перенести по экрану, "
+    "**тряска телефона** — Луз1к разлетается по экрану.\n\n"
+    "Без дела курит под, пьет Жигулёвское, режет вены, а через 3 минуты засыпает на висилице."
 )
 __author__ = "@Nekora"
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __app_version__ = ">=12.10.6"
 __sdk_version__ = ">=1.4.5.7"
 __category__ = ["fun"]
@@ -40,8 +45,8 @@ SPRITE_IDLE = (
     "..KWWKKKKKKKKKWWK.",
     "...KWWWWWWWWWWWK..",
     "..KWWWWWWWWWWWWWK.",
-    "..KWWWEW.W.WEWWWK.",
-    "..KWWWEW...WEWWWK.",
+    "..KWWWEWWWWWEWWWK.",
+    "..KWWWEWWWWWEWWWK.",
     "..KWWWGGWPWGGWWWK.",
     "..KWWWKWWKWWKWWWK.",
     "...KWWWKKKKKWWWK..",
@@ -64,6 +69,38 @@ SPRITE_IDLE = (
     "...KKKKKK.KKKKKK..",
 )
 
+# Спит на висилице: верёвка сверху, закрытые глаза, язык наружу, ноги обвисли
+SPRITE_HANG = (
+    "........KK........",
+    "........KK........",
+    "..KK...K.K.K...KK.",
+    ".KWWK..KKKKK..KWWK",
+    ".KWWK...KKK...KWSK",
+    "..KWWKKKKKKKKKWWK.",
+    "...KWWWWWWWWWWWK..",
+    "..KWWWWWWWWWWWWWK.",
+    "..KWWWDWWWWWDWWWK.",
+    "..KWWWWWWWWWWWWWK.",
+    "..KWWWGGWPWGGWWWK.",
+    "..KWWWKWWKWWKWWWK.",
+    "...KWWWKKKKKWWWK..",
+    "....KKKKKPKKKKK...",
+    "....KKKKKKKKKK....",
+    "...KWWKWWWWKWWK...",
+    "...KGGKWWWWKGGK...",
+    "...KDDKWWWWKDDK...",
+    "...KGGKWWWWKGGK...",
+    "...KKKKWWWWKKKK...",
+    "....KWWKWWKWWK....",
+    "....KWWK..KWWK....",
+    "....KWWK..KWWK....",
+    "...KKKK....KKKK...",
+    "...KWWK....KWWK...",
+    "...KKKK....KKKK...",
+    "..................",
+    "..................",
+)
+
 GRID_W = len(SPRITE_IDLE[0])
 GRID_H = len(SPRITE_IDLE)
 
@@ -76,6 +113,7 @@ STYLE_ITEMS = [
     "Кислотный панк",
 ]
 
+# Доп. символы: B - бутылка, V - пар от пода, F/O - вспышка выстрела, M - сталь дробовика
 PALETTES = [
     # Оригинал со скетча
     {
@@ -87,6 +125,11 @@ PALETTES = [
         "R": 0xFFD92B2B,
         "E": 0xFF141414,
         "S": 0xFF141414,
+        "B": 0xFF9C6B30,
+        "V": 0xFFBFBFBF,
+        "F": 0xFFFFE14D,
+        "O": 0xFFFF8A1E,
+        "M": 0xFF9AA0A6,
     },
     # Инверсия
     {
@@ -98,6 +141,11 @@ PALETTES = [
         "R": 0xFFFF2A2A,
         "E": 0xFFFF2A2A,
         "S": 0xFFEAEAEA,
+        "B": 0xFFC98A3A,
+        "V": 0xFF8A8AA0,
+        "F": 0xFFFFFF66,
+        "O": 0xFFFF5533,
+        "M": 0xFFB0B8C0,
     },
     # Кислотный
     {
@@ -109,6 +157,11 @@ PALETTES = [
         "R": 0xFFFF0055,
         "E": 0xFF12091A,
         "S": 0xFFFF007F,
+        "B": 0xFF39FF14,
+        "V": 0xFF9B5DE5,
+        "F": 0xFFFFFF00,
+        "O": 0xFFFF0055,
+        "M": 0xFF00E5FF,
     },
 ]
 
@@ -138,7 +191,70 @@ PHRASES = {
         "Многабукав, удаляй",
         "Кто это читать вообще будет?",
     ],
+    "wake": [
+        "А? Я НЕ СПАЛ!",
+        "ЧТО? КТО? ГДЕ?!",
+        "Я тут вообще-то работал",
+    ],
+    "shake": [
+        "ААААА ТРЯСЁТ!!",
+        "ПОШЁЛ ЛЕЧУУУУ",
+        "ТУРБУЛЕНТНОСТЬ!!",
+        "КТО ТАК С ТЕЛЕФОНОМ?!</3",
+    ],
+    "shot": [
+        "*прощальный выстрел*",
+        "ТАК НЕ ИНТЕРЕСНО ЖИТЬ",
+        "*ставит дробовик к виску*",
+    ],
+    "respawn": [
+        "ЗАНОВО СОБРАЛСЯ!",
+        "*склеился по частям*",
+        "Я НЕПОБЕДИМЫЙ",
+    ],
 }
+
+AFK_AFTER = 45.0    # сек без дела -> курит/пьёт/режет
+HANG_AFTER = 180.0  # сек без дела -> висилица
+SHOT_ZONE_DP = 64   # глубина зоны поля ввода, при входе в неё — дробовик
+
+AFK_ANIMS = {
+    "pod": {
+        "frames": ("pod_a", "pod_b"),
+        "durations": (1.1, 1.5),
+        "phrases": [
+            "*затягивается подом*",
+            "*выдыхает пар в сторону*",
+            "под — единственный друг",
+        ],
+    },
+    "beer": {
+        "frames": ("beer_a", "beer_b"),
+        "durations": (0.5, 0.9),
+        "phrases": [
+            "*гла-гла-гла*",
+            "жигулёвское — это классика",
+            "*открывает бутылку об рог*",
+        ],
+    },
+    "veins": {
+        "frames": ("vein_a", "vein_b"),
+        "durations": (1.3, 0.9),
+        "phrases": [
+            "*скрип по вене*",
+            "не мешай, тут глубоко",
+            "*нервно улыбается*",
+        ],
+    },
+}
+
+SHOT_SEQ = (
+    ("shot_aim", 0.7),
+    ("shot_flash", 0.14),
+    ("shot_gone", 0.6),
+    ("shot_re1", 0.4),
+    ("shot_re2", 0.4),
+)
 
 
 def as_java_color(color: int) -> int:
@@ -148,6 +264,105 @@ def as_java_color(color: int) -> int:
 
 def clamp(val, lo, hi):
     return lo if val < lo else hi if val > hi else val
+
+
+def _clone(base):
+    return [list(row) for row in base]
+
+
+def _to_tuple(grid):
+    return tuple("".join(row) for row in grid)
+
+
+def _set(grid, cells):
+    for x, y, ch in cells:
+        if 0 <= y < len(grid) and 0 <= x < len(grid[0]):
+            grid[y][x] = ch
+    return grid
+
+
+def _blank():
+    return [["."] * GRID_W for _ in range(GRID_H)]
+
+
+def _tint(base, ch_to):
+    return tuple("".join((ch_to if c != "." else ".") for c in row) for row in base)
+
+
+def _shotgun_flash():
+    g = _clone(SPRITE_IDLE)
+    for y in range(2, 12):
+        for x in range(2, 16):
+            g[y][x] = "."
+    for y in range(2, 12):
+        for x in range(3, 15):
+            dx = x - 9
+            dy = (y - 6.5) * 1.4
+            d2 = dx * dx + dy * dy
+            if d2 <= 30:
+                if d2 < 4:
+                    g[y][x] = "K"
+                elif (x + y) % 3 == 0:
+                    g[y][x] = "O"
+                else:
+                    g[y][x] = "F"
+    return _to_tuple(g)
+
+
+def _shotgun_gone():
+    g = _blank()
+    _set(
+        g,
+        [
+            (5, 12, "R"), (12, 13, "R"), (8, 16, "R"), (4, 19, "R"),
+            (13, 10, "R"), (7, 21, "R"), (12, 8, "R"), (6, 10, "R"),
+            (10, 18, "W"), (6, 24, "W"), (11, 22, "W"), (3, 14, "W"),
+            (9, 25, "K"), (14, 20, "K"),
+            (15, 24, "M"), (16, 25, "M"), (17, 26, "M"),
+        ],
+    )
+    return _to_tuple(g)
+
+
+FRAME_MATRIX = {
+    "idle": SPRITE_IDLE,
+    "hang": SPRITE_HANG,
+    "beer_a": _to_tuple(_set(_clone(SPRITE_IDLE), [
+        (13, 4, "K"),
+        (13, 5, "B"), (13, 6, "B"), (13, 7, "B"), (13, 8, "B"), (13, 9, "B"),
+        (14, 8, "B"),
+    ])),
+    "beer_b": _to_tuple(_set(_clone(SPRITE_IDLE), [
+        (13, 7, "K"),
+        (13, 8, "B"), (13, 9, "B"), (13, 10, "B"), (13, 11, "B"), (13, 12, "B"),
+    ])),
+    "pod_a": _to_tuple(_set(_clone(SPRITE_IDLE), [
+        (13, 8, "D"), (14, 8, "D"), (13, 9, "D"), (14, 9, "R"),
+    ])),
+    "pod_b": _to_tuple(_set(_clone(SPRITE_IDLE), [
+        (13, 8, "D"), (14, 8, "D"), (13, 9, "D"), (14, 9, "R"),
+        (8, 0, "V"), (5, 1, "V"), (13, 1, "V"), (1, 5, "V"), (16, 4, "V"),
+        (17, 8, "V"), (1, 9, "V"), (2, 11, "V"), (15, 11, "V"),
+        (5, 4, "V"), (13, 4, "V"),
+    ])),
+    "vein_a": _to_tuple(_set(_clone(SPRITE_IDLE), [
+        (4, 14, "M"),
+        (3, 15, "R"), (4, 15, "R"), (5, 15, "R"),
+    ])),
+    "vein_b": _to_tuple(_set(_clone(SPRITE_IDLE), [
+        (3, 15, "R"), (4, 15, "R"), (5, 15, "R"),
+        (3, 16, "R"), (4, 16, "R"), (4, 17, "R"), (4, 18, "R"), (4, 19, "R"),
+        (4, 20, "R"),
+    ])),
+    "shot_aim": _to_tuple(_set(_clone(SPRITE_IDLE), [
+        (14, 7, "M"), (15, 7, "M"), (16, 7, "M"), (17, 7, "M"),
+        (17, 6, "D"), (17, 8, "D"), (16, 8, "D"),
+    ])),
+    "shot_flash": _shotgun_flash(),
+    "shot_gone": _shotgun_gone(),
+    "shot_re1": _tint(SPRITE_IDLE, "D"),
+    "shot_re2": _tint(SPRITE_IDLE, "G"),
+}
 
 
 class PetTouchListener(dynamic_proxy(View.OnTouchListener)):
@@ -161,6 +376,21 @@ class PetTouchListener(dynamic_proxy(View.OnTouchListener)):
         except Exception as e:
             log(f"[{__id__}] touch error: {e}")
             return False
+
+
+class ShakeListener(dynamic_proxy(SensorEventListener)):
+    def __init__(self, plugin):
+        super().__init__()
+        self.plugin = plugin
+
+    def onSensorChanged(self, event):
+        try:
+            self.plugin._on_accel(event.values)
+        except Exception:
+            pass
+
+    def onAccuracyChanged(self, sensor, accuracy):
+        pass
 
 
 class Luz1kPetPlugin(BasePlugin):
@@ -192,6 +422,21 @@ class Luz1kPetPlugin(BasePlugin):
         self._frame_cache = {}
         self._last_key = None
 
+        self._last_activity = 0.0
+        self._afk_kind = None
+        self._afk_idx = 0
+        self._afk_next = 0.0
+        self._hanging = False
+        self._shot = None
+
+        self._fling_vx = 0.0
+        self._fling_vy = 0.0
+        self._last_shake = 0.0
+        self._last_screen = (0, 0)
+
+        self._sensor_sm = None
+        self._sensor_listener = None
+
     def on_plugin_load(self):
         self._handler = Handler(Looper.getMainLooper())
         self._tick_r = R(self._tick)
@@ -211,6 +456,7 @@ class Luz1kPetPlugin(BasePlugin):
         self._running = False
         if self._handler and self._tick_r:
             self._handler.removeCallbacks(self._tick_r)
+        self._unregister_sensors()
         run_on_ui_thread(self._detach_views)
 
     def on_app_event(self, event_type):
@@ -285,6 +531,7 @@ class Luz1kPetPlugin(BasePlugin):
             run_on_ui_thread(self._start, 500)
             return
         self._running = True
+        self._last_activity = time.monotonic()
         self._schedule(16)
 
     def _schedule(self, delay_ms):
@@ -333,7 +580,11 @@ class Luz1kPetPlugin(BasePlugin):
 
         self._x = float(self.get_setting("pos_x", 220) or 220)
         self._y = float(self.get_setting("pos_y", 420) or 420)
+        self._x = clamp(self._x, 0.0, float(max(0, self._decor.getWidth() - self._w)))
+        self._y = clamp(self._y, 0.0, float(max(0, self._bottom_limit() - self._h)))
         self._last_key = None
+        self._last_screen = (self._decor.getWidth(), self._decor.getHeight())
+        self._register_sensors(context)
 
     def _detach_views(self):
         for v in (self._bubble, self._pet):
@@ -359,29 +610,41 @@ class Luz1kPetPlugin(BasePlugin):
             self._pet.setLayoutParams(lp)
             self._last_key = None
 
-    def _render_sprite(self, blink: bool, rage: bool):
+    def _bottom_limit(self):
+        # Нижняя граница зоны, где Луз1ку можно быть: над клавиатурой и навбаром
+        d = self._decor
+        if d is None:
+            return 0
+        try:
+            r = Rect()
+            d.getWindowVisibleDisplayFrame(r)
+            if r.bottom > 0:
+                return min(d.getHeight(), r.bottom)
+        except Exception:
+            pass
+        return d.getHeight()
+
+    def _render(self, name, blink=False, rage=False):
         style_idx = clamp(int(self.get_setting("style", 0) or 0), 0, len(PALETTES) - 1)
-        key = (blink, rage, style_idx)
+        key = (name, style_idx, blink, rage)
         if key in self._frame_cache:
             return self._frame_cache[key]
 
         pal = dict(PALETTES[style_idx])
-        if rage:
-            pal["E"] = 0xFFFF1E1E  # Бешеные красные зрачки
-            pal["P"] = 0xFFFF1E1E
-
         s = self._unit
         bmp = Bitmap.createBitmap(self._w, self._h, Bitmap.Config.ARGB_8888)
         canvas = Canvas(bmp)
         paint = Paint()
+        matrix = FRAME_MATRIX[name]
 
-        for y, row in enumerate(SPRITE_IDLE):
+        for y, row in enumerate(matrix):
             for x, ch in enumerate(row):
                 if ch == ".":
                     continue
-                # Если моргает — закрываем верхнюю часть глаза белым фоном
-                if blink and ch == "E" and y == 6:
+                if blink and ch == "E":
                     col = pal["W"]
+                elif rage and ch in ("E", "P"):
+                    col = 0xFFFF1E1E  # Бешеные красные зрачки
                 else:
                     col = pal.get(ch, 0xFF000000)
                 paint.setColor(jint(as_java_color(col)))
@@ -399,35 +662,111 @@ class Luz1kPetPlugin(BasePlugin):
             self._schedule(500)
             return
 
+        w = self._decor.getWidth()
+        hgt = self._decor.getHeight()
+        if (w, hgt) != self._last_screen:
+            # Поворот экрана / смена декора: клампим и подпрыгиваем
+            self._last_screen = (w, hgt)
+            self._x = clamp(self._x, 0.0, float(max(0, w - self._w)))
+            self._y = clamp(self._y, 0.0, float(max(0, self._bottom_limit() - self._h)))
+            self._hop_vy = -float(AndroidUtilities.dp(300))
+
+        dt = 0.016
+        bottom = float(self._bottom_limit())
+
         # Физика прыжка
         if self._hop_y < 0.0 or self._hop_vy != 0.0:
-            self._hop_y += self._hop_vy * 0.016
-            self._hop_vy += AndroidUtilities.dp(2000) * 0.016
+            self._hop_y += self._hop_vy * dt
+            self._hop_vy += AndroidUtilities.dp(2000) * dt
             if self._hop_y >= 0.0:
                 self._hop_y = 0.0
                 self._hop_vy = 0.0
 
-        # Таймер моргания
-        if now >= self._next_blink:
-            self._blink_until = now + 0.14
-            self._next_blink = now + random.uniform(2.2, 5.0)
+        # Физика полёта после тряски: баллистика + отскоки от краёв
+        if self._fling_vx != 0.0 or self._fling_vy != 0.0:
+            self._x += self._fling_vx * dt
+            self._y += self._fling_vy * dt
+            self._fling_vy += AndroidUtilities.dp(2600) * dt
+            max_x = max(0, w - self._w)
+            max_y = max(0.0, bottom - self._h)
+            if self._x < 0.0:
+                self._x = 0.0
+                self._fling_vx = -self._fling_vx * 0.55
+            if self._x > max_x:
+                self._x = float(max_x)
+                self._fling_vx = -self._fling_vx * 0.55
+            if self._y < 0.0:
+                self._y = 0.0
+                self._fling_vy = -self._fling_vy * 0.55
+            if self._y > max_y:
+                self._y = max_y
+                self._fling_vy = -self._fling_vy * 0.55
+            if (
+                abs(self._fling_vx) < AndroidUtilities.dp(80)
+                and abs(self._fling_vy) < AndroidUtilities.dp(80)
+                and self._y >= max_y - 1.0
+            ):
+                self._fling_vx = 0.0
+                self._fling_vy = 0.0
 
-        blink = now < self._blink_until
-        rage = now < self._rage_until
-
-        state_key = (blink, rage)
-        if state_key != self._last_key:
-            self._last_key = state_key
-            self._pet.setImageBitmap(self._render_sprite(blink, rage))
-
-        # Эффект живого скетча / тряска в рейдже
+        # Машина состояний: дробовик > висилица > афк-анимации > норма
+        idle_for = now - self._last_activity
+        frame_name = "idle"
         jitter_x = 0.0
         rot = 0.0
-        if rage:
-            jitter_x = random.uniform(-AndroidUtilities.dp(2.5), AndroidUtilities.dp(2.5))
-            rot = random.uniform(-6.0, 6.0)
-        elif bool(self.get_setting("sketch_boil", True)) and int(now * 4) % 2 == 0:
-            rot = 1.2 if int(now * 2) % 2 == 0 else -1.2
+        blink = False
+        rage = False
+
+        if self._shot is not None:
+            if now >= self._shot["until"]:
+                self._shot["idx"] += 1
+                if self._shot["idx"] >= len(self._shot["seq"]):
+                    self._shot = None
+                    self._respawn()
+                else:
+                    self._shot["until"] = now + self._shot["seq"][self._shot["idx"]][1]
+            if self._shot is not None:
+                frame_name = self._shot["seq"][self._shot["idx"]][0]
+            else:
+                frame_name = "idle"
+        elif self._hanging:
+            frame_name = "hang"
+            rot = math.sin(now * 1.6) * 7.0  # покачивание на верёвке
+        elif idle_for >= HANG_AFTER:
+            self._hanging = True
+            self._afk_kind = None
+            self._say("*уснул на висилице*")
+        elif idle_for >= AFK_AFTER:
+            if self._afk_kind is None:
+                self._afk_kind = random.choice(list(AFK_ANIMS.keys()))
+                self._afk_idx = 0
+                self._afk_next = now + AFK_ANIMS[self._afk_kind]["durations"][0]
+                self._say(random.choice(AFK_ANIMS[self._afk_kind]["phrases"]))
+            anim = AFK_ANIMS[self._afk_kind]
+            if now >= self._afk_next:
+                self._afk_idx = (self._afk_idx + 1) % len(anim["frames"])
+                self._afk_next = now + anim["durations"][self._afk_idx]
+            frame_name = anim["frames"][self._afk_idx]
+        else:
+            self._afk_kind = None
+
+        if frame_name == "idle":
+            # Таймер моргания
+            if now >= self._next_blink:
+                self._blink_until = now + 0.14
+                self._next_blink = now + random.uniform(2.2, 5.0)
+            blink = now < self._blink_until
+            rage = now < self._rage_until
+            if rage:
+                jitter_x = random.uniform(-AndroidUtilities.dp(2.5), AndroidUtilities.dp(2.5))
+                rot = random.uniform(-6.0, 6.0)
+            elif bool(self.get_setting("sketch_boil", True)) and int(now * 4) % 2 == 0:
+                rot = 1.2 if int(now * 2) % 2 == 0 else -1.2
+
+        state_key = (frame_name, blink, rage)
+        if state_key != self._last_key:
+            self._last_key = state_key
+            self._pet.setImageBitmap(self._render(frame_name, blink, rage))
 
         self._pet.setTranslationX(float(self._x + jitter_x))
         self._pet.setTranslationY(float(self._y + self._hop_y))
@@ -438,17 +777,26 @@ class Luz1kPetPlugin(BasePlugin):
             if now >= self._bubble_until:
                 self._bubble.setVisibility(View.GONE)
             else:
-                w = self._decor.getWidth()
                 bw = self._bubble.getWidth()
                 bh = self._bubble.getHeight()
                 bx = clamp(self._x + self._w / 2.0 - bw / 2.0, 8.0, float(max(8, w - bw - 8)))
                 by = self._y + self._hop_y - bh - AndroidUtilities.dp(6)
                 if by < AndroidUtilities.statusBarHeight:
                     by = self._y + self._hop_y + self._h + AndroidUtilities.dp(6)
+                by = min(by, max(0.0, bottom - bh))
                 self._bubble.setTranslationX(float(bx))
                 self._bubble.setTranslationY(float(by))
 
-        active = self._hop_vy != 0.0 or self._touch is not None or rage
+        active = (
+            self._hop_vy != 0.0
+            or self._touch is not None
+            or self._fling_vx != 0.0
+            or self._fling_vy != 0.0
+            or rage
+            or self._shot is not None
+            or self._hanging
+            or self._afk_kind is not None
+        )
         self._schedule(16 if active else 90)
 
     def _on_touch(self, event):
@@ -456,7 +804,13 @@ class Luz1kPetPlugin(BasePlugin):
         rx, ry = float(event.getRawX()), float(event.getRawY())
         now = time.monotonic()
 
+        if self._shot is not None:
+            return True
+
         if action == MotionEvent.ACTION_DOWN:
+            self._fling_vx = 0.0
+            self._fling_vy = 0.0
+            self._wake(now, say=False)
             self._touch = {"x0": rx, "y0": ry, "ox": rx - self._x, "oy": ry - self._y, "drag": False}
             self._schedule(0)
             return True
@@ -472,9 +826,13 @@ class Luz1kPetPlugin(BasePlugin):
                         self._say(random.choice(PHRASES["drag"]))
             if self._touch["drag"] and self._decor:
                 max_x = max(0, self._decor.getWidth() - self._w)
-                max_y = max(0, self._decor.getHeight() - self._h)
+                max_y = max(0, self._bottom_limit() - self._h)
                 self._x = clamp(rx - self._touch["ox"], 0.0, float(max_x))
                 self._y = clamp(ry - self._touch["oy"], 0.0, float(max_y))
+                # Прёт интерфейс внизу -> дробовик вместо фразы
+                zone_y = self._bottom_limit() - AndroidUtilities.dp(SHOT_ZONE_DP)
+                if self._y + self._h * 0.5 > zone_y:
+                    self._trigger_shotgun()
             return True
 
         if action in (MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL):
@@ -488,6 +846,45 @@ class Luz1kPetPlugin(BasePlugin):
             self._schedule(0)
             return True
         return True
+
+    def _wake(self, now=None, say=True):
+        now = now if now is not None else time.monotonic()
+        was_sleeping = self._hanging or self._afk_kind is not None
+        self._last_activity = now
+        self._hanging = False
+        self._afk_kind = None
+        if was_sleeping and say:
+            self._say(random.choice(PHRASES["wake"]))
+            self._hop_vy = -float(AndroidUtilities.dp(340))
+
+    def _trigger_shotgun(self):
+        self._touch = None
+        self._hanging = False
+        self._afk_kind = None
+        self._fling_vx = 0.0
+        self._fling_vy = 0.0
+        self._shot = {"seq": SHOT_SEQ, "idx": 0, "until": time.monotonic() + SHOT_SEQ[0][1]}
+        self._say(random.choice(PHRASES["shot"]), rage=True)
+        try:
+            self._pet.performHapticFeedback(1)
+        except Exception:
+            pass
+        self._schedule(0)
+
+    def _respawn(self):
+        if self._decor and self._decor.getWidth() > 0:
+            self._x = (self._decor.getWidth() - self._w) / 2.0
+            self._y = clamp(
+                (self._decor.getHeight() - self._h) / 2.0,
+                0.0,
+                float(max(0, self._bottom_limit() - self._h)),
+            )
+            self.set_setting("pos_x", int(self._x))
+            self.set_setting("pos_y", int(self._y))
+        self._last_activity = time.monotonic()
+        self._hop_vy = -float(AndroidUtilities.dp(420))
+        self._say(random.choice(PHRASES["respawn"]))
+        self._schedule(0)
 
     def _handle_tap(self, now: float):
         self._tap_chain = [t for t in self._tap_chain if now - t < 2.2] + [now]
@@ -518,6 +915,54 @@ class Luz1kPetPlugin(BasePlugin):
         self._say(random.choice(PHRASES["essay"]))
         self._schedule(0)
 
+    def _on_accel(self, values):
+        try:
+            ax, ay, az = float(values[0]), float(values[1]), float(values[2])
+        except Exception:
+            return
+        mag = math.sqrt(ax * ax + ay * ay + az * az)
+        now = time.monotonic()
+        if mag < 21.0 or not self._running or self._shot is not None:
+            return
+        if now - self._last_shake < 1.4:
+            return
+        self._last_shake = now
+        self._wake(now, say=False)
+        self._fling_vx = random.choice((-1.0, 1.0)) * float(
+            AndroidUtilities.dp(random.uniform(1800, 2800))
+        )
+        self._fling_vy = -float(AndroidUtilities.dp(random.uniform(900, 1700)))
+        self._say(random.choice(PHRASES["shake"]), rage=True)
+        self._schedule(0)
+
+    def _register_sensors(self, context):
+        if self._sensor_sm is not None:
+            return
+        try:
+            sm = context.getSystemService(Context.SENSOR_SERVICE)
+            if sm is None:
+                return
+            self._sensor_listener = ShakeListener(self)
+            sm.registerListener(
+                self._sensor_listener,
+                sm.getDefaultSensor(SensorManager.TYPE_ACCELEROMETER),
+                SensorManager.SENSOR_DELAY_GAME,
+            )
+            self._sensor_sm = sm
+        except Exception as e:
+            log(f"[{__id__}] accelerometer unavailable: {e}")
+            self._sensor_sm = None
+            self._sensor_listener = None
+
+    def _unregister_sensors(self):
+        if self._sensor_sm is not None and self._sensor_listener is not None:
+            try:
+                self._sensor_sm.unregisterListener(self._sensor_listener)
+            except Exception:
+                pass
+        self._sensor_sm = None
+        self._sensor_listener = None
+
     def _say(self, text: str, rage: bool = False):
         if not self._bubble:
             return
@@ -525,7 +970,7 @@ class Luz1kPetPlugin(BasePlugin):
         bg.setCornerRadius(float(AndroidUtilities.dp(8)))
         bg.setColor(jint(as_java_color(0xFF141414)))
         stroke_col = 0xFFFF2A2A if rage else 0xFFFAFAFA
-        bg.setStroke( max(2, AndroidUtilities.dp(1.5)), jint(as_java_color(stroke_col)))
+        bg.setStroke(max(2, AndroidUtilities.dp(1.5)), jint(as_java_color(stroke_col)))
         self._bubble.setBackground(bg)
         self._bubble.setTextColor(jint(as_java_color(0xFFFF4D4D if rage else 0xFFFAFAFA)))
         self._bubble.setText(text)
@@ -535,9 +980,16 @@ class Luz1kPetPlugin(BasePlugin):
     def _recenter(self):
         if self._decor and self._decor.getWidth() > 0:
             self._x = (self._decor.getWidth() - self._w) / 2.0
-            self._y = (self._decor.getHeight() - self._h) / 2.0
+            self._y = clamp(
+                (self._decor.getHeight() - self._h) / 2.0,
+                0.0,
+                float(max(0, self._bottom_limit() - self._h)),
+            )
             self.set_setting("pos_x", int(self._x))
             self.set_setting("pos_y", int(self._y))
+            self._last_activity = time.monotonic()
+            self._hanging = False
+            self._afk_kind = None
             self._hop_vy = -float(AndroidUtilities.dp(420))
             self._say("ЛУЗ1К В ЗДАНИИ!")
             self._schedule(0)
