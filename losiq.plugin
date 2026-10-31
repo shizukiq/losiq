@@ -1,0 +1,543 @@
+import random
+import time
+from typing import Any, List
+
+from android.graphics import Bitmap, Canvas, Paint
+from android.graphics.drawable import GradientDrawable
+from android.os import Handler, Looper
+from android.util import TypedValue
+from android.view import MotionEvent, View
+from android.widget import FrameLayout, ImageView, TextView
+from java import dynamic_proxy, jint
+from org.telegram.messenger import AndroidUtilities
+from org.telegram.ui import LaunchActivity
+
+from android_utils import R, log, run_on_ui_thread
+from base_plugin import AppEvent, BasePlugin, HookResult, MenuItemData, MenuItemType
+from client_utils import get_last_fragment
+from ui.settings import Divider, Header, Selector, Switch, Text
+
+__id__ = "luz1k_pet"
+__name__ = "ЛУЗ1К (Sketch Pet)"
+__description__ = (
+    "Экранный питомец ЛУЗ1К в скетч-стиле.\n\n"
+    "**Тап** — тычок и фраза, **двойной тап** — RAGE-режим (красные глаза), "
+    "**спам тапами** — вывести из себя, **перетаскивание** — перенести по экрану."
+)
+__author__ = "@Nekora"
+__version__ = "1.1.0"
+__app_version__ = ">=12.10.6"
+__sdk_version__ = ">=1.4.5.7"
+__category__ = ["fun"]
+
+# Пиксель-арт матрица Луз1ка (18x28) по твоему скетчу:
+# K - чёрный контур, W - белый, G - серые митенки/пояс, D - тёмно-серые полоски,
+# P - розовый язык/нос, R - красная кровь на коленях, E - зрачки, S - пирсинг
+SPRITE_IDLE = (
+    "..KK...K.K.K...KK.",
+    ".KWWK..KKKKK..KWWK",
+    ".KWWK...KKK...KWSK",
+    "..KWWKKKKKKKKKWWK.",
+    "...KWWWWWWWWWWWK..",
+    "..KWWWWWWWWWWWWWK.",
+    "..KWWWEW.W.WEWWWK.",
+    "..KWWWEW...WEWWWK.",
+    "..KWWWGGWPWGGWWWK.",
+    "..KWWWKWWKWWKWWWK.",
+    "...KWWWKKKKKWWWK..",
+    "....KKKKKPKKKKK...",
+    "....KWWWWWWWWWK...",
+    "...KWWKKKKKKKWWK..",
+    "..KWWKWWWWWWWKWWK.",
+    "..KGGKWWWWWWWKGGK.",
+    "..KDDKWWWWWWWKDDK.",
+    "..KGGKGGGGGGGKGGK.",
+    "..KWWKDDDDDDDKWWK.",
+    "..KKKKGGGGGGGKKKK.",
+    "....KWWWWKWWWWK...",
+    "....KGGGGKWRRRK...",
+    "....KWRWWKWWWRK...",
+    "....KWRWWKWWWWK...",
+    "....KWWWWKWRWWK...",
+    "...KKKKKK.KKKKKK..",
+    "...KWWWWK.KWWWWK..",
+    "...KKKKKK.KKKKKK..",
+)
+
+GRID_W = len(SPRITE_IDLE[0])
+GRID_H = len(SPRITE_IDLE)
+
+SIZE_ITEMS = ["Компактный", "Средний", "Крупный"]
+SIZE_DP = [2.2, 3.0, 3.8]
+
+STYLE_ITEMS = [
+    "Оригинал (MS Paint Скетч)",
+    "Инверсия (Тёмный демон)",
+    "Кислотный панк",
+]
+
+PALETTES = [
+    # Оригинал со скетча
+    {
+        "K": 0xFF141414,
+        "W": 0xFFFAFAFA,
+        "G": 0xFF7A7A7A,
+        "D": 0xFF424242,
+        "P": 0xFFFF9EBB,
+        "R": 0xFFD92B2B,
+        "E": 0xFF141414,
+        "S": 0xFF141414,
+    },
+    # Инверсия
+    {
+        "K": 0xFFEAEAEA,
+        "W": 0xFF18181C,
+        "G": 0xFF4E4E5A,
+        "D": 0xFF2C2C34,
+        "P": 0xFFFF4D6D,
+        "R": 0xFFFF2A2A,
+        "E": 0xFFFF2A2A,
+        "S": 0xFFEAEAEA,
+    },
+    # Кислотный
+    {
+        "K": 0xFF12091A,
+        "W": 0xFFD4FF33,
+        "G": 0xFF9B5DE5,
+        "D": 0xFF6A2C91,
+        "P": 0xFFFF007F,
+        "R": 0xFFFF0055,
+        "E": 0xFF12091A,
+        "S": 0xFFFF007F,
+    },
+]
+
+PHRASES = {
+    "tap": [
+        "Чё палишь?",
+        "ЛУЗ1К на месте",
+        "Руки убрал от рогов",
+        "Колени? Об асфальт разбил",
+        "Не тыкай, палец сломаешь",
+        "*высовывает язык*",
+        "Скучно тут у вас в чатах",
+    ],
+    "rage": [
+        "ЩА КУСНУ!",
+        "RAGE MODE!",
+        "ХВАТИТ ТЫКАТЬ!",
+        "Я ТЕБЕ ЩАС ИНТЕРФЕЙС РАЗНЕСУ!",
+    ],
+    "drag": [
+        "Э, за рога не хватай!",
+        "Поставь на место!",
+        "Лечу-у-у",
+    ],
+    "essay": [
+        "Нифига ты поэму накатал",
+        "Многабукав, удаляй",
+        "Кто это читать вообще будет?",
+    ],
+}
+
+
+def as_java_color(color: int) -> int:
+    val = int(color) & 0xFFFFFFFF
+    return val - 0x100000000 if val >= 0x80000000 else val
+
+
+def clamp(val, lo, hi):
+    return lo if val < lo else hi if val > hi else val
+
+
+class PetTouchListener(dynamic_proxy(View.OnTouchListener)):
+    def __init__(self, plugin):
+        super().__init__()
+        self.plugin = plugin
+
+    def onTouch(self, view, event):
+        try:
+            return bool(self.plugin._on_touch(event))
+        except Exception as e:
+            log(f"[{__id__}] touch error: {e}")
+            return False
+
+
+class Luz1kPetPlugin(BasePlugin):
+    def __init__(self):
+        super().__init__()
+        self._handler = None
+        self._tick_r = None
+        self._running = False
+        self._decor = None
+        self._pet = None
+        self._bubble = None
+        self._touch_listener = None
+
+        self._x = 200.0
+        self._y = 400.0
+        self._hop_y = 0.0
+        self._hop_vy = 0.0
+        self._w = 1
+        self._h = 1
+        self._unit = 1
+
+        self._touch = None
+        self._last_tap = 0.0
+        self._tap_chain = []
+        self._blink_until = 0.0
+        self._next_blink = 0.0
+        self._rage_until = 0.0
+        self._bubble_until = 0.0
+        self._frame_cache = {}
+        self._last_key = None
+
+    def on_plugin_load(self):
+        self._handler = Handler(Looper.getMainLooper())
+        self._tick_r = R(self._tick)
+        self.add_menu_item(
+            MenuItemData(
+                menu_type=MenuItemType.DRAWER_MENU,
+                text="ЛУЗ1К",
+                on_click=lambda _=None: self._toggle_show(),
+                item_id="luz1k_toggle",
+                icon="msg_emoji_cat",
+            )
+        )
+        self.add_on_send_message_hook()
+        run_on_ui_thread(self._start)
+
+    def on_plugin_unload(self):
+        self._running = False
+        if self._handler and self._tick_r:
+            self._handler.removeCallbacks(self._tick_r)
+        run_on_ui_thread(self._detach_views)
+
+    def on_app_event(self, event_type):
+        if event_type == AppEvent.PAUSE:
+            self._running = False
+            if self._handler and self._tick_r:
+                self._handler.removeCallbacks(self._tick_r)
+        elif event_type == AppEvent.RESUME:
+            run_on_ui_thread(self._start)
+
+    def on_send_message_hook(self, account, params):
+        try:
+            msg = str(getattr(params, "message", "") or "")
+            if len(msg) > 200 and self._running:
+                run_on_ui_thread(self._on_long_msg)
+        except Exception:
+            pass
+        return HookResult()
+
+    def create_settings(self) -> List[Any]:
+        return [
+            Header(text="ЛУЗ1К — Настройки"),
+            Switch(
+                key="show",
+                text="Показывать Луз1ка",
+                default=True,
+                icon="msg_emoji_cat",
+                on_change=lambda v: run_on_ui_thread(self._start if v else self._detach_views),
+            ),
+            Selector(
+                key="size",
+                text="Размер",
+                default=1,
+                items=SIZE_ITEMS,
+                icon="msg_photo_settings",
+                on_change=lambda _: run_on_ui_thread(self._rebuild),
+            ),
+            Selector(
+                key="style",
+                text="Палитра скетча",
+                default=0,
+                items=STYLE_ITEMS,
+                icon="msg_colors",
+                on_change=lambda _: run_on_ui_thread(self._rebuild),
+            ),
+            Switch(
+                key="sketch_boil",
+                text="Живой скетч-контур",
+                default=True,
+                subtext="Лёгкое дрожание нарисованного персонажа",
+                icon="msg_photo_rotate",
+            ),
+            Divider(),
+            Text(
+                text="Призвать в центр экрана",
+                icon="msg_retry",
+                accent=True,
+                on_click=lambda _=None: run_on_ui_thread(self._recenter),
+            ),
+        ]
+
+    def _toggle_show(self):
+        cur = bool(self.get_setting("show", True))
+        self.set_setting("show", not cur)
+        run_on_ui_thread(self._start if not cur else self._detach_views)
+
+    def _start(self):
+        if not bool(self.get_setting("show", True)):
+            return
+        self._ensure_attached()
+        if self._pet is None:
+            run_on_ui_thread(self._start, 500)
+            return
+        self._running = True
+        self._schedule(16)
+
+    def _schedule(self, delay_ms):
+        if self._handler and self._tick_r:
+            self._handler.removeCallbacks(self._tick_r)
+            self._handler.postDelayed(self._tick_r, int(delay_ms))
+
+    def _ensure_attached(self):
+        act = getattr(LaunchActivity, "instance", None)
+        if act is None:
+            frag = get_last_fragment()
+            act = frag.getParentActivity() if frag else None
+        if act is None or act.isFinishing():
+            return
+        decor = act.getWindow().getDecorView()
+        if self._pet and self._decor and self._pet.getParent() and self._decor.equals(decor):
+            return
+        self._detach_views()
+        self._decor = decor
+        self._build_views(act)
+
+    def _build_views(self, context):
+        self._update_metrics()
+        pet = ImageView(context)
+        pet.setScaleType(ImageView.ScaleType.FIT_XY)
+        self._touch_listener = PetTouchListener(self)
+        pet.setOnTouchListener(self._touch_listener)
+        self._decor.addView(pet, FrameLayout.LayoutParams(self._w, self._h))
+        self._pet = pet
+
+        bubble = TextView(context)
+        bubble.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12.5)
+        bubble.setPadding(
+            AndroidUtilities.dp(10),
+            AndroidUtilities.dp(5),
+            AndroidUtilities.dp(10),
+            AndroidUtilities.dp(5),
+        )
+        try:
+            bubble.setTypeface(AndroidUtilities.bold())
+        except Exception:
+            pass
+        bubble.setVisibility(View.GONE)
+        self._decor.addView(bubble, FrameLayout.LayoutParams(-2, -2))
+        self._bubble = bubble
+
+        self._x = float(self.get_setting("pos_x", 220) or 220)
+        self._y = float(self.get_setting("pos_y", 420) or 420)
+        self._last_key = None
+
+    def _detach_views(self):
+        for v in (self._bubble, self._pet):
+            if v and v.getParent():
+                v.getParent().removeView(v)
+        self._pet = None
+        self._bubble = None
+        self._decor = None
+
+    def _update_metrics(self):
+        idx = clamp(int(self.get_setting("size", 1) or 0), 0, len(SIZE_DP) - 1)
+        self._unit = max(2, AndroidUtilities.dp(SIZE_DP[idx]))
+        self._w = GRID_W * self._unit
+        self._h = GRID_H * self._unit
+        self._frame_cache.clear()
+
+    def _rebuild(self):
+        self._update_metrics()
+        if self._pet:
+            lp = self._pet.getLayoutParams()
+            lp.width = self._w
+            lp.height = self._h
+            self._pet.setLayoutParams(lp)
+            self._last_key = None
+
+    def _render_sprite(self, blink: bool, rage: bool):
+        style_idx = clamp(int(self.get_setting("style", 0) or 0), 0, len(PALETTES) - 1)
+        key = (blink, rage, style_idx)
+        if key in self._frame_cache:
+            return self._frame_cache[key]
+
+        pal = dict(PALETTES[style_idx])
+        if rage:
+            pal["E"] = 0xFFFF1E1E  # Бешеные красные зрачки
+            pal["P"] = 0xFFFF1E1E
+
+        s = self._unit
+        bmp = Bitmap.createBitmap(self._w, self._h, Bitmap.Config.ARGB_8888)
+        canvas = Canvas(bmp)
+        paint = Paint()
+
+        for y, row in enumerate(SPRITE_IDLE):
+            for x, ch in enumerate(row):
+                if ch == ".":
+                    continue
+                # Если моргает — закрываем верхнюю часть глаза белым фоном
+                if blink and ch == "E" and y == 6:
+                    col = pal["W"]
+                else:
+                    col = pal.get(ch, 0xFF000000)
+                paint.setColor(jint(as_java_color(col)))
+                canvas.drawRect(float(x * s), float(y * s), float((x + 1) * s), float((y + 1) * s), paint)
+
+        self._frame_cache[key] = bmp
+        return bmp
+
+    def _tick(self):
+        if not self._running:
+            return
+        now = time.monotonic()
+        self._ensure_attached()
+        if self._pet is None or self._decor is None:
+            self._schedule(500)
+            return
+
+        # Физика прыжка
+        if self._hop_y < 0.0 or self._hop_vy != 0.0:
+            self._hop_y += self._hop_vy * 0.016
+            self._hop_vy += AndroidUtilities.dp(2000) * 0.016
+            if self._hop_y >= 0.0:
+                self._hop_y = 0.0
+                self._hop_vy = 0.0
+
+        # Таймер моргания
+        if now >= self._next_blink:
+            self._blink_until = now + 0.14
+            self._next_blink = now + random.uniform(2.2, 5.0)
+
+        blink = now < self._blink_until
+        rage = now < self._rage_until
+
+        state_key = (blink, rage)
+        if state_key != self._last_key:
+            self._last_key = state_key
+            self._pet.setImageBitmap(self._render_sprite(blink, rage))
+
+        # Эффект живого скетча / тряска в рейдже
+        jitter_x = 0.0
+        rot = 0.0
+        if rage:
+            jitter_x = random.uniform(-AndroidUtilities.dp(2.5), AndroidUtilities.dp(2.5))
+            rot = random.uniform(-6.0, 6.0)
+        elif bool(self.get_setting("sketch_boil", True)) and int(now * 4) % 2 == 0:
+            rot = 1.2 if int(now * 2) % 2 == 0 else -1.2
+
+        self._pet.setTranslationX(float(self._x + jitter_x))
+        self._pet.setTranslationY(float(self._y + self._hop_y))
+        self._pet.setRotation(float(rot))
+
+        # Позиционирование текстового облачка
+        if self._bubble and self._bubble.getVisibility() == View.VISIBLE:
+            if now >= self._bubble_until:
+                self._bubble.setVisibility(View.GONE)
+            else:
+                w = self._decor.getWidth()
+                bw = self._bubble.getWidth()
+                bh = self._bubble.getHeight()
+                bx = clamp(self._x + self._w / 2.0 - bw / 2.0, 8.0, float(max(8, w - bw - 8)))
+                by = self._y + self._hop_y - bh - AndroidUtilities.dp(6)
+                if by < AndroidUtilities.statusBarHeight:
+                    by = self._y + self._hop_y + self._h + AndroidUtilities.dp(6)
+                self._bubble.setTranslationX(float(bx))
+                self._bubble.setTranslationY(float(by))
+
+        active = self._hop_vy != 0.0 or self._touch is not None or rage
+        self._schedule(16 if active else 90)
+
+    def _on_touch(self, event):
+        action = event.getActionMasked()
+        rx, ry = float(event.getRawX()), float(event.getRawY())
+        now = time.monotonic()
+
+        if action == MotionEvent.ACTION_DOWN:
+            self._touch = {"x0": rx, "y0": ry, "ox": rx - self._x, "oy": ry - self._y, "drag": False}
+            self._schedule(0)
+            return True
+
+        if not self._touch:
+            return False
+
+        if action == MotionEvent.ACTION_MOVE:
+            if abs(rx - self._touch["x0"]) > 10 or abs(ry - self._touch["y0"]) > 10:
+                if not self._touch["drag"]:
+                    self._touch["drag"] = True
+                    if random.random() < 0.35:
+                        self._say(random.choice(PHRASES["drag"]))
+            if self._touch["drag"] and self._decor:
+                max_x = max(0, self._decor.getWidth() - self._w)
+                max_y = max(0, self._decor.getHeight() - self._h)
+                self._x = clamp(rx - self._touch["ox"], 0.0, float(max_x))
+                self._y = clamp(ry - self._touch["oy"], 0.0, float(max_y))
+            return True
+
+        if action in (MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL):
+            was_drag = self._touch["drag"]
+            self._touch = None
+            if was_drag:
+                self.set_setting("pos_x", int(self._x))
+                self.set_setting("pos_y", int(self._y))
+            else:
+                self._handle_tap(now)
+            self._schedule(0)
+            return True
+        return True
+
+    def _handle_tap(self, now: float):
+        self._tap_chain = [t for t in self._tap_chain if now - t < 2.2] + [now]
+
+        # Двойной тап или спам тапами -> RAGE
+        if len(self._tap_chain) >= 5 or (now - self._last_tap < 0.32):
+            self._last_tap = 0.0
+            self._tap_chain.clear()
+            self._rage_until = now + 2.2
+            self._hop_vy = -float(AndroidUtilities.dp(520))
+            self._say(random.choice(PHRASES["rage"]), rage=True)
+            try:
+                self._pet.performHapticFeedback(1)
+            except Exception:
+                pass
+            return
+
+        self._last_tap = now
+        self._hop_vy = -float(AndroidUtilities.dp(340))
+        self._say(random.choice(PHRASES["tap"]))
+        try:
+            self._pet.performHapticFeedback(3)
+        except Exception:
+            pass
+
+    def _on_long_msg(self):
+        self._hop_vy = -float(AndroidUtilities.dp(380))
+        self._say(random.choice(PHRASES["essay"]))
+        self._schedule(0)
+
+    def _say(self, text: str, rage: bool = False):
+        if not self._bubble:
+            return
+        bg = GradientDrawable()
+        bg.setCornerRadius(float(AndroidUtilities.dp(8)))
+        bg.setColor(jint(as_java_color(0xFF141414)))
+        stroke_col = 0xFFFF2A2A if rage else 0xFFFAFAFA
+        bg.setStroke( max(2, AndroidUtilities.dp(1.5)), jint(as_java_color(stroke_col)))
+        self._bubble.setBackground(bg)
+        self._bubble.setTextColor(jint(as_java_color(0xFFFF4D4D if rage else 0xFFFAFAFA)))
+        self._bubble.setText(text)
+        self._bubble.setVisibility(View.VISIBLE)
+        self._bubble_until = time.monotonic() + 2.6
+
+    def _recenter(self):
+        if self._decor and self._decor.getWidth() > 0:
+            self._x = (self._decor.getWidth() - self._w) / 2.0
+            self._y = (self._decor.getHeight() - self._h) / 2.0
+            self.set_setting("pos_x", int(self._x))
+            self.set_setting("pos_y", int(self._y))
+            self._hop_vy = -float(AndroidUtilities.dp(420))
+            self._say("ЛУЗ1К В ЗДАНИИ!")
+            self._schedule(0)
