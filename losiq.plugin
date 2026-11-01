@@ -10,7 +10,7 @@ import urllib.request
 from typing import Any, List
 
 from android.content import Context
-from android.graphics import Bitmap, Canvas, Paint, Rect
+from android.graphics import Bitmap, BitmapFactory, Canvas, Paint, Rect
 from android.graphics.drawable import GradientDrawable
 from android.hardware import Sensor, SensorEventListener, SensorManager
 from android.os import Handler, Looper
@@ -24,7 +24,7 @@ from org.telegram.ui.ActionBar import Theme
 
 from android_utils import R, log, run_on_ui_thread
 from base_plugin import AppEvent, BasePlugin, HookResult, MenuItemData, MenuItemType
-from client_utils import get_last_fragment
+from client_utils import get_last_fragment, send_text
 from ui.settings import Divider, Header, Input, Selector, Switch, Text
 
 try:
@@ -41,7 +41,7 @@ __description__ = (
     "**тряска телефона** — разлетится по экрану кувырком.\n\n"
     "С гравитацией стоит на пузырях сообщений и поле ввода, съезжает при наклоне, "
     "а если подбросить к статус-бару — повиснет на руках.\n\n"
-    "Без дела курит под, пьёт Жигулёвское и режет вены, а от скуки повисает на верёвке и спит. "
+    "Без дела курит под, пьёт Жигулёвское, устраивает пиксельные сцены и от скуки повисает на верёвке. "
     "Перетащи его в чате на поле ввода — выстрелит в себя из дробовика и соберётся заново.\n\n"
     "**Мозг** — Луз1к помнит тебя: имя, привычки, любимые чаты и треки, что вы делали вместе, "
     "копит привязанность и сам запоминает новые факты. Память хранится только на телефоне.\n\n"
@@ -245,6 +245,7 @@ _BEER_DONE = [
 ]
 
 # --- АФК: вены ---
+# Q — тёмная кровь (край струи), R — светлая, чтобы поток не выглядел плоским
 _VEIN_AIM = [
     (0, 13, "D"), (1, 13, "D"),                          # рукоять лезвия
     (1, 14, "M"), (2, 14, "M"), (3, 14, "M"), (4, 14, "M"),  # лезвие над запястьем
@@ -253,18 +254,43 @@ _VEIN_AIM = [
 ]
 
 _VEIN_CUT = [
-    (3, 15, "R"), (4, 15, "R"), (5, 15, "R"),            # порез через запястье
-    (4, 16, "R"),                                         # первая капля
+    (2, 15, "R"), (3, 15, "Q"), (4, 15, "R"),            # порез через запястье
+    (3, 16, "R"), (4, 16, "Q"),                           # первая тонкая струйка
     (1, 14, "M"), (2, 14, "M"), (3, 14, "M"),            # лезвие отводится
     (6, 6, "W"), (6, 7, "K"), (12, 6, "W"), (12, 7, "K"),
 ]
 
 _VEIN_DRIP = [
-    (3, 15, "R"), (4, 15, "R"), (5, 15, "R"),
-    (3, 16, "R"), (4, 16, "R"), (5, 16, "R"),
-    (4, 17, "R"), (3, 17, "R"),                           # кровь стекает
-    (4, 18, "R"), (4, 20, "R"),                           # капли: падают и на ноге
-    (1, 27, "M"), (2, 27, "M"),                           # лезвие брошено на пол
+    (2, 15, "R"), (3, 15, "Q"), (4, 15, "R"),            # порез
+    (3, 16, "R"), (4, 16, "Q"),                           # струя бежит по кисти
+    (3, 17, "R"), (4, 17, "R"),
+    (4, 18, "R"), (3, 18, "Q"),
+    (4, 19, "R"), (5, 20, "R"), (4, 20, "Q"),            # отрывается от руки
+    (5, 21, "R"), (6, 22, "R"), (4, 22, "R"),            # брызги в стороны
+    (5, 23, "Q"), (3, 23, "R"),
+    (6, 24, "R"), (4, 25, "R"), (7, 25, "R"),            # капли падают к полу
+    (2, 26, "R"), (1, 26, "Q"), (0, 26, "R"),            # лужица слева от ботинка
+    (2, 27, "R"), (1, 27, "R"), (1, 25, "R"),
+    (16, 26, "M"), (17, 27, "M"),                        # лезвие брошено у края
+]
+
+# --- АФК: нездоровый пиксельный эпизод ---
+_SICK_FACE = [
+    (6, 6, "W"), (6, 7, "K"), (12, 6, "W"), (12, 7, "K"),  # зажмурился
+    (8, 10, "E"), (9, 10, "E"), (10, 10, "E"),            # рот нараспашку
+]
+_SICK_A = _SICK_FACE + [
+    (9, 11, "R"), (9, 12, "Q"),                           # подступило к горлу
+]
+_SICK_B = _SICK_FACE + [
+    (9, 11, "R"), (9, 12, "R"), (9, 13, "Q"), (9, 14, "R"),
+    (8, 14, "R"), (10, 15, "R"), (9, 16, "R"), (8, 17, "Q"),
+    (10, 17, "R"), (9, 18, "R"),                          # струя вниз по груди
+]
+_SICK_C = _SICK_FACE + [
+    (9, 11, "R"), (9, 12, "R"), (9, 13, "Q"), (9, 14, "R"),
+    (9, 16, "Q"), (9, 18, "R"), (10, 19, "R"),
+    (8, 20, "R"), (9, 21, "Q"), (11, 21, "R"),            # стекает и капает
 ]
 
 FRAME_MATRIX = {
@@ -279,6 +305,9 @@ FRAME_MATRIX = {
     "vein_a": _to_tuple(_set(_clone(SPRITE_IDLE), _VEIN_AIM)),
     "vein_b": _to_tuple(_set(_clone(SPRITE_IDLE), _VEIN_CUT)),
     "vein_c": _to_tuple(_set(_clone(SPRITE_IDLE), _VEIN_DRIP)),
+    "sick_a": _to_tuple(_set(_clone(SPRITE_IDLE), _SICK_A)),
+    "sick_b": _to_tuple(_set(_clone(SPRITE_IDLE), _SICK_B)),
+    "sick_c": _to_tuple(_set(_clone(SPRITE_IDLE), _SICK_C)),
     "shot_aim": _to_tuple(_set(_clone(SPRITE_IDLE), [
         (14, 7, "M"), (15, 7, "M"), (16, 7, "M"), (17, 7, "M"),
         (17, 6, "D"), (17, 8, "D"), (16, 8, "D"),
@@ -292,6 +321,15 @@ FRAME_MATRIX = {
 SIZE_ITEMS = ["Маленький", "Средний", "Большой"]
 SIZE_DP = [1.7, 2.2, 2.8]
 
+# Внешний вид: пиксельный скетч или свои картинки-аватары
+SKIN_BASE = "Скетч (пиксели)"
+AVATAR_PREFIX = "luz1k_avatar"
+AVATAR_EXT = (".png", ".jpg", ".jpeg", ".webp")
+AVATAR_HINT = (
+    "Аватары берутся из папки данных плагина: положи туда файлы вида "
+    f"{AVATAR_PREFIX}1.png, {AVATAR_PREFIX}2.png — они появятся в списке «Внешний вид»."
+)
+
 TEMPER_ITEMS = ["Святой", "Добрый", "Дерзкий", "Злой", "ПСИХ"]
 # 0..4: пауза между актами хаоса (сек, 0=никогда)
 TEMPER_CHAOS = [0.0, 40.0, 18.0, 7.0, 2.0]
@@ -302,19 +340,19 @@ PALETTES = [
         "K": 0xFF141414, "W": 0xFFFAFAFA, "G": 0xFF7A7A7A, "D": 0xFF424242,
         "P": 0xFFFF9EBB, "R": 0xFFD92B2B, "E": 0xFF141414, "S": 0xFF141414,
         "B": 0xFF9C6B30, "V": 0xFFBFBFBF, "F": 0xFFFFE14D, "O": 0xFFFF8A1E, "M": 0xFF9AA0A6,
-        "U": 0xFFD9A441, "N": 0xFFC9A66B,
+        "U": 0xFFD9A441, "N": 0xFFC9A66B, "Q": 0xFF7A1414,
     }),
     ("Инверсия (Тёмный демон)", {
         "K": 0xFFEAEAEA, "W": 0xFF18181C, "G": 0xFF4E4E5A, "D": 0xFF2C2C34,
         "P": 0xFFFF4D6D, "R": 0xFFFF2A2A, "E": 0xFFFF2A2A, "S": 0xFFEAEAEA,
         "B": 0xFFC98A3A, "V": 0xFF8A8AA0, "F": 0xFFFFFF66, "O": 0xFFFF5533, "M": 0xFFB0B8C0,
-        "U": 0xFFC08A2E, "N": 0xFF8890A0,
+        "U": 0xFFC08A2E, "N": 0xFF8890A0, "Q": 0xFF8E1010,
     }),
     ("Кислотный панк", {
         "K": 0xFF12091A, "W": 0xFFD4FF33, "G": 0xFF9B5DE5, "D": 0xFF6A2C91,
         "P": 0xFFFF007F, "R": 0xFFFF0055, "E": 0xFF12091A, "S": 0xFFFF007F,
         "B": 0xFF39FF14, "V": 0xFF9B5DE5, "F": 0xFFFFFF00, "O": 0xFFFF0055, "M": 0xFF00E5FF,
-        "U": 0xFFFFD23F, "N": 0xFF76FF03,
+        "U": 0xFFFFD23F, "N": 0xFF76FF03, "Q": 0xFF8E0030,
     }),
 ]
 
@@ -359,6 +397,21 @@ PATTERNS = {
     ),
 }
 
+# Неровная пиксельная лужа с брызгами: X — кровь, o — тёмный край
+STAIN_ROWS = (
+    "..oo......o........",
+    ".oXXo....oXo...oo..",
+    "oXXXXo..oXXo..oXXo.",
+    "oXXXXXXooXXXoXXXXXo",
+    "oXXXXXXXoXXXXXXXXXo",
+    ".oXXXXXXoXXXXXXXXo.",
+    "..ooXXXXoXXXXXXo...",
+    ".o...ooo..oXXXo....",
+    ".o........oXXo.....",
+    "oo.........oo......",
+)
+STAIN_COLORS = {"X": 0xFFB02A3C, "o": 0xFF6E1826}
+
 PHRASES = {
     "hello": ["Привет!", "Я Луз1к!", "О, это ты!"],
     "idle": [
@@ -373,6 +426,91 @@ PHRASES = {
         "Колени? Об асфальт разбил",
         "*высовывает язык*",
         "Интересно, что там в чатах",
+        "холодильник опять гудит, будто знает финал",
+        "поставь что-нибудь с гитарой, которая почти расстроена",
+        "я сегодня разговаривал с пакетом из магазина",
+        "у этой ночи вкус остывшего чая",
+        "не выключай экран, мне тут не так темно",
+        "все мои планы выглядят как недописанное сообщение",
+        "я притворюсь заставкой, пока ты занят",
+        "снилось, что автобус свернул прямо в море",
+        "на кухне горит свет, хотя там никого",
+        "время идёт, а я всё ещё в той же вкладке",
+        "если пропаду — проверь старые голосовые",
+        "за окном ветер, а тут только уведомления",
+        "в кармане забытая конфета с прошлой зимы",
+        "собрал из пикселей маленькое кладбище батареек",
+        "в холодильнике лампочка и одинокая банка",
+        "кассета доиграла, а я всё ещё слушаю шум",
+        "моё лучшее воспоминание длится две секунды",
+        "где крики слышат все соседние кварталы",
+        "в этих стенах я видел столько много боли",
+        "предметы из моих, твоих воспоминаний",
+        "я вновь решил всем доверять и верить",
+        "в этих стенах когда-то танцевали люди",
+        "в своей комнате я, как у беса в глотке",
+        "голова моя чем-то забита не тем",
+        "я видел в них талант, возненавидев вскоре",
+        "в своём астральном псевдомире",
+        "в долгах у государства, в самом грязном доме",
+        "кто-то наверху включил дождь и ушёл",
+        "сегодня небо цвета выключенного телевизора",
+        "Walk around with my eyes on the ground",
+        "You look at me like I'm just some kinda fool",
+        "Been like this for like thirteen years",
+        "I spent most of my life swallowed up by my fears",
+        "Sarah runs to feel the burning in her lungs",
+        "And clear her head",
+        "Why do you even run the race?",
+        "My baby's alright",
+        "She just doesn't wanna see me tonight",
+        "Not for a minute, not for a second",
+        "Nothin' here for you to make right",
+        "I miss you so bad",
+        "но я не дам себе сгнить от старости",
+        "мой побитый, ржавый мозг не замечает усталости",
+        "не хочу я слышать в ответ: ты такой же, как все прототипы",
+        "я уйду и останусь никем, но сломаю стереотипы",
+        "залитые кровью глаза в моей памяти рвут изнутри",
+        "я не помню, как осень пришла",
+        "или я развалился на части давно",
+        "меня сводит с ума",
+        "когда ты видишь, как вся жизнь проходит",
+        "ты знаешь, как меня заботит и заводит это",
+        "на пороге лежит алкоголь",
+        "его черти подкинули мне, но зачем?",
+        "чтобы снова я съехал на ноль?",
+        "я дрожащими руками делаю дыру в бутылке",
+        "мои кости аккуратно я раскладывал по полкам",
+        "и теперь никто из вас меня не назовёт ребёнком",
+        "пока я в облаках, с улыбкою буду там плавать и витать",
+        "я буду плавать и витать — ты будешь плакать и рыдать",
+        "детка, не смотри на глаза",
+        "я ненавижу холод, потому и спасал себя из этой дряни",
+        "взгляни на небеса, на небеса, на небеса",
+        "руки в волосах твоих пропахли керосином",
+        "я покину своё тело, автостоп по магазинам",
+        "мы испачкались по локти в этих людях некрасивых",
+        "мы согреемся в сугробах, чтобы нас не моросило",
+        "ты сегодня чудом выжил? поздравляю, с днём рождения",
+        "моя койка рядом с гробом, я давно не видел бога",
+        "моё тело попускает, чтобы вновь нажраться в сопли",
+        "их тело — рудимент, от злости скалят зубы",
+        "до талого скурив друг друга — нервы в спальне",
+        "и не включая свет, а я на ощупь трогал",
+        "а комната сожрала, выплюнув останки",
+        "инсульта прямо в сердце из моих эмоций",
+        "а я бесплатно протираю пыль на полке",
+        "я видел, как рождаются идеи",
+        "и умирают в клетке октагона",
+        "но комната напомнила, что я не верю в бога",
+        "упав на пол, я понял, что мне страшно",
+        "я в четырёх стенах на свет не выйду",
+        "размешивая в колпаке я кашу",
+        "пытаюсь выдать сам себя за индивида",
+        "и всё же мне не встать, я будто бы прикован",
+        "а в доме, где давно я никому не нужен",
+        "среди кощунства, наркоты и алкоголя",
     ],
     "tap": ["Ой!", "Эй!", "Чего?", "Чё палишь?", "Руки убрал от рогов", "Не тыкай, палец сломаешь"],
     "annoyed": ["Хватит тыкать!", "Щекотно же!", "Ну всё, обиделся", "Я ТЕБЕ ЩАС ИНТЕРФЕЙС РАЗНЕСУ!"],
@@ -389,7 +527,16 @@ PHRASES = {
     "mail": ["Тебе пишут!", "Сообщение!", "Кто-то написал!", "Динь-динь!", "Смотри, новенькое!"],
     "sent": ["Отправлено!", "Улетело!", "Хорошо сказано!", "Пиу!", "Жду ответа!"],
     "essay": ["Нифига ты поэму накатал", "Многабукав, удаляй", "Кто это читать вообще будет?"],
-    "love": ["Ааа, мило ♥", "♥♥♥", "Как трогательно!", "Любовь!"],
+    "love": [
+        "Ааа, мило ♥", "♥♥♥", "Как трогательно!", "Любовь!",
+        "если тебя ненавидят, я подарю тебе цветы",
+        "если заплачешь на кухне — принесу тебе кота",
+        "давай набьём на пальцах бесконечность?",
+        "подарю тебе цветы, чтобы ты знала, как сильно я люблю тебя",
+        "подарю тебе кота, чтобы ты знала, что ты никогда не будешь одна",
+        "давай с тобою будем чем-то вечным?",
+        "I miss you so bad",
+    ],
     "laugh": ["Ахаха!", "Хи-хи-хи", "Смешно!", "Ха-ха!"],
     "hi": ["Привет-привет!", "И тебе привет!", "Здрасьте!", "*машет*"],
     "music": ["О, музыка!", "Танцуем!", "Это мой трек!", "♪♪♪"],
@@ -398,6 +545,12 @@ PHRASES = {
     "chat_again": ["О, опять этот чат", "Снова сюда?", "Опять {name}?", "Мы тут уже были"],
     "chat_new": ["О, {name}!", "Это же {name}!", "Что пишет {name}?", "Привет, {name}!"],
     "chat_self": ["Твои заметки!", "Избранное, уютно", "Что сохраним?"],
+    "chaos_write": [
+        "*печатает что-то не то*",
+        "*отправил сообщение и спрятался*",
+        "написал. надеюсь, ты прочитаешь",
+        "*вытер экран рукавом*",
+    ],
     "shake": ["Ааааа ТРЯСЁТ!!", "ТУРБУЛЕНТНОСТЬ!!", "КТО ТАК С ТЕЛЕФОНОМ?!", "ПОШЁЛ ЛЕЧУУУУ"],
     "slide": ["Скользко!", "Уиии~", "Меня несёт!"],
     "hang": ["Держусь!", "Помогите!", "Высоковато…", "Не отпущу!"],
@@ -408,8 +561,9 @@ PHRASES = {
     "land_msg": ["Стою на сообщении!", "Тут мягко", "Хороший пузырь", "Ой, я на тексте"],
     "land_input": ["Я на поле ввода!", "Пиши, не стесняйся", "Тут тесно", "Сижу над клавиатурой"],
     "back": ["О, ты вернулся!", "Я скучал!", "С возвращением!", "Давно не виделись"],
-    "shot": ["ТАК НЕ ИНТЕРЕСНО ЖИТЬ", "*ставит дробовик к виску*", "*прощальный выстрел*"],
+    "shot": ["*экран моргнул и снова собрался*", "Рестарт — мой любимый жанр"],
     "respawn": ["ЗАНОВО СОБРАЛСЯ!", "*склеился по частям*", "Я НЕПОБЕДИМЫЙ"],
+    "clean": ["Спасибо. Теперь тут снова просто экран", "Уборка закончена, тишина осталась", "*довольно машет тряпочкой*"],
 }
 
 SITUATIONS = {
@@ -444,11 +598,123 @@ SITUATIONS = {
     "peek": "Ты выглядываешь из-за края экрана.",
     "found": "Пользователь заметил, что ты подглядывал из-за края экрана.",
     "poop": "Ты переел интерфейса и оставил кучку, тебе неловко.",
-    "clean": "Пользователь убрал за тобой кучку, ты благодарен.",
+    "clean": "Пользователь убрал пиксельную лужу, ты благодарен.",
+    "vomit": "Ты оставил на полу стилизованное пиксельное пятно.",
     "drop": "Пользователь отпустил тебя и поставил на место.",
     "land_msg": "Ты приземлился и стоишь на пузыре сообщения в чате.",
     "land_input": "Ты приземлился на поле ввода сообщения.",
     "back": "Пользователь вернулся в приложение после перерыва.",
+}
+
+# Реплики, которые ПСИХ сам пишет в открытый чат (только он). Написаны под
+# настроение lo-fi / bedroom-инди: сыро, по-бытовому, с лёгкой жутью.
+CHAT_LINES = (
+    "я оставил свет включённым, чтобы ты думал, что я не сплю",
+    "у меня в голове заел один трек и я не могу его выключить",
+    "на улице дождь, а ты всё равно не выйдешь",
+    "хотел написать что-то важное, но забыл что именно",
+    "все мои друзья — это уведомления, и они врут",
+    "моя комната пахнет старыми чеками из магазина",
+    "иногда мне кажется, что это чаты читают меня",
+    "я не грустный, я просто долго грузился",
+    "поставь чайник, я тут посижу в углу",
+    "не отвечай, я и так знаю, что ты занят",
+    "если я пропаду, это будет выглядеть как обычный день",
+    "ночью автобусы ездят туда, где никого нет",
+    "я записал голосовое, но там только шум холодильника",
+    "всё нормально, просто экран слишком яркий",
+    "включил музыку, а она играет будто не для меня",
+    "в подъезде кто-то не выключил свет, и мне от этого спокойнее",
+    "моя голова — комната, где все вещи не на своих местах",
+    "нарисовал тебя, стёр, нарисовал снова",
+    "не выключай телефон, мне здесь темно",
+    "автобус ушёл, я остался на остановке смотреть в снег",
+    "иногда мне кажется, что я просто плохой mp3",
+    "на плите остался чайник, я всё слышу даже отсюда",
+    "я не прошу много, просто дай побыть рядом",
+    "если тебе грустно — я тоже, так честнее",
+    "если тебя ненавидят, я подарю тебе цветы",
+    "заплакала на кухне? я принесу тебе кота",
+    "давай набьём на пальцах бесконечность?",
+    "если бы мы были чем-то вечным, я бы не боялся просыпаться",
+    "я буду рядом, даже если мы опять молчим",
+    "сегодня можно просто не быть одним",
+    "подарю тебе цветы, чтобы ты знала, как сильно я люблю тебя",
+    "подарю тебе кота, чтобы ты знала, что ты никогда не будешь одна",
+    "предметы из моих, твоих воспоминаний",
+    "я вновь решил всем доверять и верить",
+    "Walk around with my eyes on the ground",
+    "You look at me like I'm just some kinda fool",
+    "Been like this for like thirteen years",
+    "I spent most of my life swallowed up by my fears",
+    "I thought she was really cool",
+    "My girlfriend told me that she doesn't love me anymore",
+    "And my head in my ass 'cause I can't get it out",
+    "And keep the pace to save your face",
+    "You'll never make the place",
+    "Why do you even run the race?",
+    "My baby's alright",
+    "She just doesn't wanna see me tonight",
+    "Not for a minute, not for a second",
+    "Nothin' here for you to make right",
+    "I miss you so bad",
+    "Do you know what Sarah meant?",
+    "When she said, You be my guest?",
+    "мой дресс-код неплохо впишется на кладбище",
+    "я допил все наши стопки, извини, ты отходила",
+    "мы развалимся в подъезде в ожидании поправки",
+    "голова моя чем-то забита не тем",
+    "в долгах у государства, в самом грязном доме",
+    "я видел в них талант, возненавидев вскоре",
+    "ты служишь дьяволу всего лишь за полставки",
+    "я допил все наши стопки и не заметил как",
+    "мы с тобою звёзды, я надеюсь, не забыла",
+    "я нашёл вчера себя там, где не искал",
+    "меня сводит с ума",
+    "ты знаешь, как меня заботит и заводит это",
+    "я дрожащими руками делаю дыру в бутылке",
+    "мои кости аккуратно я раскладывал по полкам",
+    "детка, не смотри на глаза",
+    "я покину своё тело, автостоп по магазинам",
+    "мы согреемся в сугробах, чтобы нас не моросило",
+    "ты сегодня чудом выжил? поздравляю, с днём рождения",
+    "но комната напомнила, что я не верю в бога",
+    "упав на пол, я понял, что мне страшно",
+    "а в доме, где давно я никому не нужен",
+    "пока я в облаках, с улыбкою буду там плавать и витать",
+    "руки в волосах твоих пропахли керосином",
+    "взгляни на небеса, на небеса, на небеса",
+)
+
+# Только для локальных пузырьков и AFK-сцен; не используется в CHAT_LINES.
+SENSITIVE_LINES = {
+    "idle": (
+        "На пороге стоит моя смерть",
+        "В вечном сне продолжаю страдать, но зачем?",
+        "Суетой и суицидом разбавляю чай с вареньем",
+        "Я выпив яду жду от комнаты расправы",
+        "Мы найдём друг-друга в петлях на прокуренных квартирах",
+        "Ты царапаешь улыбку на моём лице иголкой",
+        "Я нашёл вчера свой труп, когда раскапывал закладки",
+        "Забей меня камнями, в этом мире чуда нету",
+    ),
+    "veins": (
+        "Я опять убьюсь в себе, но не найду ответы",
+        "Иначе я убьюсь в себе и не найду ответы",
+        "кровь стекает по моим рукам, а я всё ещё здесь",
+        "на рукаве красное, на экране опять три процента",
+        "кто-то должен был это сделать, и это оказался я",
+        "красное на белом — единственный цвет, который меня слышит",
+    ),
+    "sick": (
+        "Я похоронил себя в своей же квартире",
+        "Может быть, я и умер давно",
+    ),
+    "shot": (
+        "ТАК НЕ ИНТЕРЕСНО ЖИТЬ",
+        "*ставит дробовик к виску*",
+        "*прощальный выстрел*",
+    ),
 }
 
 AFK_AFTER = 45.0
@@ -461,17 +727,54 @@ AFK_ANIMS = {
             "*выдыхает пар в сторону*",
             "aegis boost 3 не подводит",
             "xros 6 — и ни грамма лишнего",
+            "пар уходит, а мысли остаются",
+            "дым рисует в воздухе кого-то похожего на тебя",
+            "я дышу, значит я ещё где-то здесь",
         ],
     },
     "beer": {
         "frames": ("beer_a", "beer_b", "beer_c"),
         "durations": (1.0, 0.8, 1.3),
-        "phrases": ["*гла-гла-гла*", "жигулёвское — это классика", "*открывает бутылку об рог*"],
+        "phrases": [
+            "*гла-гла-гла*",
+            "жигулёвское — это классика",
+            "*открывает бутылку об рог*",
+            "на дне бутылки что-то важное, но я не помню что",
+            "за тех, кого нет в этом чате",
+            "ещё глоток и станет ровно так же",
+        ],
     },
     "veins": {
         "frames": ("vein_a", "vein_b", "vein_c"),
         "durations": (1.3, 0.9, 1.5),
-        "phrases": ["*скрип по вене*", "не мешай, тут глубоко", "*нервно улыбается*"],
+        "phrases": [
+            "в комнате так тихо, что слышно старый холодильник",
+            "я забыл, какой сегодня день, но помню этот трек",
+            "не спрашивай, почему не сплю — сам не знаю",
+            "всё это выглядит глупо при свете кухни",
+            "*натягивает рукава и смотрит в пол*",
+            "может, утром это будет казаться дальше",
+            "завтра будет стыдно, но завтра ещё не наступило",
+        ],
+    },
+    "sick": {
+        "frames": ("sick_a", "sick_b", "sick_c", "idle"),
+        "durations": (1.0, 0.55, 1.2, 2.0),
+        "phrases": [
+            "*отворачивается, будто ничего не произошло*",
+            "меня выворачивает даже от собственных мыслей",
+            "внутри играет радио, которое ловит одни помехи",
+            "выплюнул ночь, а она всё равно осталась",
+            "на полу теперь ещё одно пятно, ну класс",
+            "дай воды. И не включай большой свет",
+            "*сидит рядом с пятном и делает вид, что так и надо*",
+            "кажется, я оставил себя где-то на прошлой неделе",
+            "утро пахнет вчерашним",
+            "даже дождь сегодня звучит как помехи",
+            "выключи свет, мне и так видно достаточно",
+            "So I drank a ton of liquor, then I threw up in her sink",
+            "Next time use the toilet",
+        ],
     },
 }
 # Тест анимок: пункт 0 — «выбрать…», остальные запускают конкретную сцену
@@ -484,6 +787,7 @@ ANIM_TEST_ITEMS = [
     "Дробовик",
     "Тряска",
     "Прыжок",
+    "Тошнота",
 ]
 
 SHOT_SEQ = (
@@ -637,7 +941,7 @@ BOND_LEVELS = (
     (101.0, "лучший друг"),
 )
 ACTIVE_KINDS = frozenset((
-    "pet", "tap", "jump", "annoyed", "drag", "throw", "shake", "hang",
+    "pet", "tap", "jump", "annoyed", "drag", "throw", "shake", "hang", "vomit",
     "clean", "spit", "msg_out", "essay", "chat_open",
 ))
 EPISODE_TEXT = {
@@ -649,6 +953,8 @@ EPISODE_TEXT = {
     "throw": ("тебя бросили ({d})", "тебя бросили"),
     "shake": ("телефон потрясли, тебя закрутило", None),
     "hang": ("ты повис на статус-баре", None),
+    "vomit": ("ты оставил пиксельную лужу", None),
+    "clean": ("пользователь убрал за тобой", None),
     "eat": ("ты съел элемент интерфейса", None),
     "shot": ("ты выстрелил в себя из дробовика", None),
     "respawn": ("ты собрал себя заново после выстрела", None),
@@ -659,6 +965,7 @@ EPISODE_TEXT = {
     "laugh": ("в «{d}» пользователя рассмешили", "пользователя рассмешили в чате"),
     "hi": ("в «{d}» пользователю написали «привет»", "пользователю написали «привет»"),
     "chat_open": ("пользователь открыл чат «{d}»", "пользователь открыл чат"),
+    "chat_out": ("ты сам написал сообщение в чат", None),
     "music": ("играл трек: {d}", "играла музыка"),
     "session": ("пользователь вернулся в приложение", None),
 }
@@ -1178,6 +1485,15 @@ class PetTouchListener(dynamic_proxy(View.OnTouchListener)):
             return False
 
 
+class StainClickListener(dynamic_proxy(View.OnClickListener)):
+    def __init__(self, plugin):
+        super().__init__()
+        self.plugin = plugin
+
+    def onClick(self, view):
+        self.plugin._clean_vomit()
+
+
 class ShakeListener(dynamic_proxy(SensorEventListener)):
     def __init__(self, plugin):
         super().__init__()
@@ -1230,6 +1546,9 @@ class Luz1kPetPlugin(BasePlugin):
         self._sensor_listener = None
         self._particles = []
         self._eaten_ui = []
+        self._vomit_stain = None
+        self._stain_click_listener = None
+        self._afk_vomit_done = False
         self._shot = None
 
         self._unit = 1
@@ -1238,6 +1557,7 @@ class Luz1kPetPlugin(BasePlugin):
         self._frames = {}
         self._particle_bitmaps = {}
         self._frame_key = None
+        self._avatar_cache = None
 
         self._launch_t = -100.0
         self._paused_at = 0.0
@@ -1352,6 +1672,7 @@ class Luz1kPetPlugin(BasePlugin):
                 brain_text = "Что Луз1к помнит\n" + brain.describe(self._user_name(), self._cfg.get("brain_about"))
             except Exception as e:
                 log(f"[{__id__}] brain describe error: {e}")
+        skin_items = [SKIN_BASE] + [os.path.basename(p) for p in self._avatar_files()]
         return [
             Header(text="ЛУЗ1К"),
             Switch(
@@ -1377,6 +1698,35 @@ class Luz1kPetPlugin(BasePlugin):
                 items=[p[0] for p in PALETTES],
                 icon="msg_colors",
                 on_change=lambda v: self._on_cfg_change("color", v),
+            ),
+            Selector(
+                key="skin",
+                text="Внешний вид",
+                default=0,
+                items=skin_items,
+                icon="msg_photo_settings",
+                on_change=lambda v: self._on_cfg_change("skin", int(v)),
+            ),
+            Input(
+                key="avatar_path",
+                text="Своя картинка (путь, необязательно)",
+                default="",
+                subtext=AVATAR_HINT,
+                icon="msg_photo_settings",
+                on_change=lambda v: self._on_cfg_change("avatar_path", str(v or "").strip()),
+            ),
+            Input(
+                key="avatar_dir",
+                text="Папка с аватарами (необязательно)",
+                default="",
+                subtext="Пусто — папка данных плагина. Иначе укажи путь к папке с файлами luz1k_avatar*",
+                icon="msg_link",
+                on_change=lambda v: self._on_cfg_change("avatar_dir", str(v or "").strip()),
+            ),
+            Text(
+                text="Папка аватаров: " + (self._avatar_dir() or "недоступна"),
+                subtext=f"Найдено картинок: {len(self._avatar_files())}",
+                icon="msg_info",
             ),
             Header(text="Поведение"),
             Switch(
@@ -1453,16 +1803,38 @@ class Luz1kPetPlugin(BasePlugin):
             ),
             Text(
                 text="Что делает характер",
-                subtext="Святой — не трогает интерфейс. Добрый — милеет и любит гладёжку. Дерзкий — изредка двигает кнопки. Злой — часто ломает интерфейс и открывает чаты. ПСИХ — ломает постоянно",
+                subtext="Святой — не трогает интерфейс. Добрый — милеет и любит гладёжку. Дерзкий — изредка двигает кнопки. Злой — часто ломает интерфейс. ПСИХ — ломает постоянно, сам открывает чаты и пишет туда",
                 icon="msg_info",
             ),
             Switch(
                 key="chaos",
                 text="Ломает интерфейс",
                 default=True,
-                subtext="При высоком характере двигает элементы, открывает чаты, дёргает настройки. Можно выключить отдельно",
+                subtext="При высоком характере двигает элементы, дёргает настройки. Можно выключить отдельно",
                 icon="msg_blocked",
                 on_change=lambda v: self._on_cfg_change("chaos", v),
+            ),
+            Switch(
+                key="chat_write",
+                text="Сам пишет в чаты",
+                default=True,
+                subtext="Только ПСИХ: бродит по чатам и отправляет реплики от твоего имени. Ниже ПСИХа — только бубнит себе",
+                icon="msg_reactions",
+                on_change=lambda v: self._on_cfg_change("chat_write", v),
+            ),
+            Switch(
+                key="sensitive_lines",
+                text="Я осознаю: будут упоминания самоповреждения",
+                default=False,
+                subtext="Включает подготовленные тяжёлые реплики о смерти и самоповреждении. Только пузырьки и локальные сцены — в чаты не отправляются.",
+                icon="msg_secret",
+                on_change=lambda v: self._on_cfg_change("sensitive_lines", v),
+            ),
+            Header(text="Вдохновение"),
+            Text(
+                text="Alex G · Автостопом по фазе сна · Cupsize · wifiskeleton",
+                subtext="Часть коротких фрагментов предоставлена владельцем плагина; остальные реплики оригинальные.",
+                icon="msg_voice_headphones",
             ),
             Header(text="Тест анимаций"),
             Selector(
@@ -1672,7 +2044,7 @@ class Luz1kPetPlugin(BasePlugin):
             Divider(
                 text="Тап — ткнуть, двойной тап — прыжок, удержание — погладить "
                      "(води пальцем туда-сюда), перетаскивание — перенести, резкий бросок — полёт. "
-                     "Без дела курит под, пьёт Жигулёвское и режет вены, от скуки повисает на верёвке. "
+                     "Без дела курит под, пьёт Жигулёвское, иногда блеванёт пиксельной кровью — лужу можно убрать тапом. "
                      "Потряси телефон — разлетится по экрану. В чате перетащи его на поле ввода — "
                      "выстрелит в себя из дробовика и соберётся заново."
             ),
@@ -1683,6 +2055,9 @@ class Luz1kPetPlugin(BasePlugin):
             "show": bool(self.get_setting("show", True)),
             "size": int(self.get_setting("size", 1) or 0),
             "color": int(self.get_setting("color", 0) or 0),
+            "skin": int(self.get_setting("skin", 0) or 0),
+            "avatar_path": str(self.get_setting("avatar_path", "") or "").strip(),
+            "avatar_dir": str(self.get_setting("avatar_dir", "") or "").strip(),
             "gravity": bool(self.get_setting("gravity", False)),
             "wander": bool(self.get_setting("wander", True)),
             "phrases": bool(self.get_setting("phrases", True)),
@@ -1690,6 +2065,8 @@ class Luz1kPetPlugin(BasePlugin):
             "haptics": bool(self.get_setting("haptics", True)),
             "temper": int(self.get_setting("temper", 2) or 0),
             "chaos": bool(self.get_setting("chaos", True)),
+            "chat_write": bool(self.get_setting("chat_write", True)),
+            "sensitive_lines": bool(self.get_setting("sensitive_lines", False)),
             "test_anim": 0,
             "tg_events": bool(self.get_setting("tg_events", True)),
             "dance": bool(self.get_setting("dance", True)),
@@ -1720,6 +2097,9 @@ class Luz1kPetPlugin(BasePlugin):
         if key == "show":
             run_on_ui_thread(lambda: self._apply_show(bool(value)))
         elif key in ("size", "color"):
+            run_on_ui_thread(self._rebuild_sprites)
+        elif key in ("skin", "avatar_path", "avatar_dir"):
+            self._avatar_cache = None
             run_on_ui_thread(self._rebuild_sprites)
         elif key == "sleep" and self._state == "sleep":
             self._last_interaction = time.monotonic()
@@ -1870,6 +2250,9 @@ class Luz1kPetPlugin(BasePlugin):
         for view in list(self._particles):
             self._remove_view(view)
         self._particles = []
+        self._remove_view(self._vomit_stain)
+        self._vomit_stain = None
+        self._stain_click_listener = None
         self._remove_view(self._bubble)
         self._remove_view(self._pet)
         self._pet = None
@@ -1924,13 +2307,77 @@ class Luz1kPetPlugin(BasePlugin):
         idx = clamp(int(self._cfg.get("color", 0)), 0, len(PALETTES) - 1)
         return PALETTES[idx]
 
+    def _skin_index(self):
+        return max(0, int(self._cfg.get("skin", 0) or 0))
+
+    def _avatar_mode(self):
+        return self._skin_index() >= 1 and self._avatar_file() is not None
+
+    def _avatar_dir(self):
+        override = self._cfg.get("avatar_dir") or ""
+        if override and os.path.isdir(override):
+            return override
+        try:
+            context = jclass("org.telegram.messenger.ApplicationLoader").applicationContext
+            return str(context.getFilesDir().getAbsolutePath())
+        except Exception:
+            return ""
+
+    def _avatar_files(self):
+        """Все luz1k_avatar*.png/jpg из папки плагина, по алфавиту."""
+        directory = self._avatar_dir()
+        if not directory:
+            return []
+        try:
+            names = [
+                n for n in os.listdir(directory)
+                if n.lower().startswith(AVATAR_PREFIX) and n.lower().endswith(AVATAR_EXT)
+            ]
+        except Exception:
+            return []
+        return [os.path.join(directory, n) for n in sorted(names)]
+
+    def _avatar_file(self):
+        """Путь к выбранной картинке: явный путь или файл по индексу в списке."""
+        explicit = self._cfg.get("avatar_path") or ""
+        if explicit and os.path.exists(explicit):
+            return explicit
+        files = self._avatar_files()
+        idx = self._skin_index() - 1
+        if 0 <= idx < len(files):
+            return files[idx]
+        return files[0] if files else None
+
+    def _avatar_bitmap(self):
+        if self._avatar_cache is not None:
+            return self._avatar_cache
+        path = self._avatar_file()
+        bmp = None
+        try:
+            if path and os.path.exists(path):
+                bmp = BitmapFactory.decodeFile(path)
+        except Exception as e:
+            log(f"[{__id__}] avatar load error: {e}")
+            bmp = None
+        if bmp is not None:
+            self._avatar_cache = bmp
+        return bmp
+
     def _get_frame(self, key):
-        bmp = self._frames.get(key)
+        cache_key = key
+        if (
+            self._avatar_mode()
+            and key[7] is None
+            and not (key[3] == "tuck" and key[0] == "sleep")
+            and self._avatar_bitmap() is not None
+        ):
+            cache_key = ("avatar", self._skin_index(), self._w, self._h)
+        bmp = self._frames.get(cache_key)
         if bmp is None:
             if len(self._frames) >= MAX_FRAME_CACHE:
                 self._frames.pop(next(iter(self._frames)))
             bmp = self._render_frame(key)
-            self._frames[key] = bmp
+            self._frames[cache_key] = bmp
         return bmp
 
     def _render_frame(self, key):
@@ -1940,6 +2387,25 @@ class Luz1kPetPlugin(BasePlugin):
         bmp = Bitmap.createBitmap(self._w, self._h, Bitmap.Config.ARGB_8888)
         canvas = Canvas(bmp)
         paint = Paint()
+
+        hang_frame = legs == "tuck" and eyes == "sleep"
+        if self._avatar_mode() and afk is None and not hang_frame:
+            avatar = self._avatar_bitmap()
+            if avatar is not None:
+                aw, ah = avatar.getWidth(), avatar.getHeight()
+                if aw > 0 and ah > 0:
+                    scale = min(self._w / float(aw), self._h / float(ah))
+                    dw, dh = aw * scale, ah * scale
+                    left = (self._w - dw) / 2.0
+                    top = self._h - dh
+                    paint.setFilterBitmap(True)
+                    canvas.drawBitmap(
+                        avatar,
+                        Rect(0, 0, aw, ah),
+                        Rect(int(left), int(top), int(left + dw), int(top + dh)),
+                        paint,
+                    )
+                    return bmp
 
         def cell(x, y, color):
             paint.setColor(jint(as_java_color(color)))
@@ -2076,6 +2542,7 @@ class Luz1kPetPlugin(BasePlugin):
         self._next_sent_react = 0.0
         self._chat_dialog = 0
         self._next_chat_comment = now + 8.0
+        self._next_chat_send = now + 20.0
         self._rotation = 0
         self._accel_prev = None
         self._shake_hits = []
@@ -2402,31 +2869,33 @@ class Luz1kPetPlugin(BasePlugin):
             self._wave_until = now + 1.6
 
     def _do_chaos(self, now, min_y):
-        """Меняет вид интерфейса и открывает случайные чаты в зависимости от характера."""
-        temper = self._temper_idx()
-        roll = random.random()
-        psi = temper >= 4
+        """Выбирает одно действие. Открывать чаты и писать в них может только ПСИХ."""
+        psi = self._temper_idx() >= 4
+        actions = [("eat", 0.36), ("hurl", 0.18), ("rotate", 0.14), ("shake", 0.16)]
+        if psi:
+            actions.append(("chat", 0.22))
+            actions.append(("write", 0.16))
+        action = random.choices([a for a, _ in actions], weights=[w for _, w in actions])[0]
 
-        # 1. Съесть элемент интерфейса (главный номер программы)
-        if roll < (0.45 if psi else 0.4):
-            if self._chaos_eat(now, min_y):
-                self._next_action = now + random.uniform(0.5, 1.5)
-                self._schedule(0)
-                return
+        if action == "write" and self._chaos_send_chat(now):
+            self._next_action = now + random.uniform(1.0, 2.5)
+            self._schedule(0)
+            return
 
-        # 2. Швырнуть кнопку через экран
-        if roll < (0.62 if psi else 0.55):
-            if self._chaos_hurl(min_y):
-                self._next_action = now + random.uniform(0.5, 1.5)
-                return
+        if action == "eat" and self._chaos_eat(now, min_y):
+            self._next_action = now + random.uniform(0.5, 1.5)
+            self._schedule(0)
+            return
 
-        # 3. Перевернуть вьюху вверх ногами
-        if roll < (0.72 if psi else 0.65):
+        if action == "hurl" and self._chaos_hurl(min_y):
+            self._next_action = now + random.uniform(0.5, 1.5)
+            return
+
+        if action == "rotate":
             target = self._chaos_pick_view(min_y)
             if target is not None:
-                view = target[0]
                 try:
-                    anim = view.animate()
+                    anim = target[0].animate()
                     anim.rotation(180.0)
                     anim.setDuration(400)
                     anim.start()
@@ -2436,15 +2905,12 @@ class Luz1kPetPlugin(BasePlugin):
                 self._hop(self._dp(340))
                 return
 
-        # 4. Открыть чат
-        if roll < (0.86 if psi else 0.8):
-            if self._chaos_open_chat():
-                self._say("chaos_chat")
-                self._hop(self._dp(420))
-                self._next_action = now + random.uniform(0.5, 1.5)
-                return
+        if action == "chat" and self._chaos_open_chat():
+            self._say("chaos_chat")
+            self._hop(self._dp(420))
+            self._next_action = now + random.uniform(0.5, 1.5)
+            return
 
-        # 5. Фолбэк: трясёт всё вокруг и сам дёргается
         self._chaos_shake_all(now, min_y)
         self._say("chaos_drift")
         self._slide_v = random.choice((-1, 1)) * self._dp(180)
@@ -2665,6 +3131,28 @@ class Luz1kPetPlugin(BasePlugin):
             anim.start()
         except Exception as e:
             log(f"[{__id__}] chaos shake error: {e}")
+
+    def _chaos_send_chat(self, now):
+        """ПСИХ сам отправляет реплику в открытый чат. Только он и по тумблеру."""
+        if self._temper_idx() < 4:
+            return False
+        if not self._cfg.get("chaos", True) or not self._cfg.get("chat_write", True):
+            return False
+        if not self._cfg.get("phrases", True):
+            return False
+        if not self._chat_dialog or now < self._next_chat_send:
+            return False
+        self._next_chat_send = now + random.uniform(25.0, 60.0)
+        try:
+            send_text(self._chat_dialog, random.choice(CHAT_LINES))
+        except Exception as e:
+            log(f"[{__id__}] chaos write error: {e}")
+            return False
+        self._mem("chat_out", bond=-0.3)
+        self._say("chaos_write")
+        self._hop(self._dp(300))
+        self._haptic(3)
+        return True
 
     def _chaos_open_chat(self):
         """Открывает случайный чат. Пути: fragment.presentFragment -> activity.presentFragment."""
@@ -3436,6 +3924,13 @@ class Luz1kPetPlugin(BasePlugin):
             self._schedule(0)
         elif which == 7:
             self._hop(self._dp(720))
+        elif which == 8:
+            self._afk_kind = "sick"
+            self._afk_idx = 0
+            self._afk_vomit_done = False
+            self._afk_next = now + 0.1
+            self._afk_frame = None
+            self._last_interaction = now - AFK_AFTER - 1.0
         # сброс селектора обратно на «Выбрать…»
         try:
             self.set_setting("test_anim", 0)
@@ -3852,6 +4347,53 @@ class Luz1kPetPlugin(BasePlugin):
             pass
         self._remove_view(view)
 
+    def _leave_vomit(self):
+        if self._vomit_stain is not None or self._decor is None or self._pet is None:
+            return
+        try:
+            cols = len(STAIN_ROWS[0])
+            s = max(2, int(self._w * 1.15) // cols)
+            width, height = cols * s, len(STAIN_ROWS) * s
+            bmp = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            canvas = Canvas(bmp)
+            paints = {}
+            for ch, color in STAIN_COLORS.items():
+                paint = Paint()
+                paint.setColor(jint(as_java_color(color)))
+                paints[ch] = paint
+            for y, row in enumerate(STAIN_ROWS):
+                for x, ch in enumerate(row):
+                    paint = paints.get(ch)
+                    if paint is not None:
+                        canvas.drawRect(float(x * s), float(y * s), float((x + 1) * s), float((y + 1) * s), paint)
+            view = ImageView(self._pet.getContext())
+            view.setImageBitmap(bmp)
+            view.setScaleType(ImageView.ScaleType.FIT_XY)
+            view.setClickable(True)
+            self._stain_click_listener = StainClickListener(self)
+            view.setOnClickListener(self._stain_click_listener)
+            self._decor.addView(view, FrameLayout.LayoutParams(width, height))
+            max_x = max(0, self._decor.getWidth() - width)
+            max_y = max(0, self._decor.getHeight() - height)
+            sx = clamp(self._x + self._w * 0.5, 0, max_x)
+            sy = clamp(self._y + self._h - height * 0.5, 0, max_y)
+            view.setTranslationX(float(sx))
+            view.setTranslationY(float(sy))
+            self._vomit_stain = view
+            self._mem("vomit")
+        except Exception as e:
+            log(f"[{__id__}] vomit stain error: {e}")
+
+    def _clean_vomit(self):
+        if self._vomit_stain is None:
+            return
+        self._remove_view(self._vomit_stain)
+        self._vomit_stain = None
+        self._stain_click_listener = None
+        self._mem("clean", bond=0.2)
+        self._haptic(0)
+        self._show_bubble(random.choice(PHRASES["clean"]))
+
     # ---------- мозг ----------
 
     def _brain_path(self):
@@ -4111,6 +4653,9 @@ class Luz1kPetPlugin(BasePlugin):
     def _say(self, category, force=False, name=None, ctx=None):
         if self._bubble is None or (not force and not self._cfg.get("phrases", True)):
             return
+        if category == "shot" and not self._cfg.get("sensitive_lines", False):
+            self._say_static("respawn", name)
+            return
         if not self._ai_ready():
             self._say_static(category, name)
             return
@@ -4338,6 +4883,8 @@ class Luz1kPetPlugin(BasePlugin):
 
     def _ai_prompt(self, category, ctx):
         situation = SITUATIONS.get(category, str(category))
+        if category == "shot" and not self._cfg.get("sensitive_lines", False):
+            situation = "Ты проходишь стилизованный перезапуск и снова появляешься на экране."
         lines = [f"Ситуация: {situation}", f"Сейчас {time.strftime('%H:%M')}."]
         for key, label in CTX_LABELS:
             value = ctx.get(key)
@@ -4484,7 +5031,9 @@ class Luz1kPetPlugin(BasePlugin):
             self._last_phrase = memo
             self._show_bubble(memo)
             return
-        phrases = PHRASES.get(category, [category])
+        phrases = list(PHRASES.get(category, [category]))
+        if self._cfg.get("sensitive_lines", False):
+            phrases.extend(SENSITIVE_LINES.get(category, ()))
         if name is None:
             phrases = [p for p in phrases if "{name}" not in p] or phrases
         options = [p for p in phrases if p != self._last_phrase] or phrases
@@ -4632,25 +5181,44 @@ class Luz1kPetPlugin(BasePlugin):
         self._say("respawn")
         self._schedule(0)
 
+    def _afk_phrases(self, kind):
+        phrases = list(AFK_ANIMS[kind]["phrases"])
+        if self._cfg.get("sensitive_lines", False):
+            phrases.extend(SENSITIVE_LINES.get(kind, ()))
+        return phrases
+
     def _step_afk(self, now):
         psi = self._temper_idx() >= 4
         if psi and self._afk_kind is not None and now >= self._afk_next:
-            # ПСИХ: перескакивает между подом/пивом/венами без остановки
+            # ПСИХ: перескакивает между сценами без остановки
             if random.random() < 0.6:
-                kinds = [k for k in AFK_ANIMS if k != self._afk_kind]
+                kinds = [
+                    k for k in AFK_ANIMS
+                    if k != self._afk_kind and not (k == "sick" and self._vomit_stain is not None)
+                ]
                 self._afk_kind = random.choice(kinds)
                 self._afk_idx = 0
+                self._afk_vomit_done = False
                 self._afk_next = now + AFK_ANIMS[self._afk_kind]["durations"][0]
                 if self._cfg.get("phrases", True) and random.random() < 0.5:
-                    self._show_bubble(random.choice(AFK_ANIMS[self._afk_kind]["phrases"]))
+                    self._show_bubble(random.choice(self._afk_phrases(self._afk_kind)))
         if self._afk_kind is None:
-            self._afk_kind = random.choice(list(AFK_ANIMS))
+            kinds = [k for k in AFK_ANIMS if not (k == "sick" and self._vomit_stain is not None)]
+            self._afk_kind = random.choice(kinds)
             self._afk_idx = 0
+            self._afk_vomit_done = False
             self._afk_next = now + AFK_ANIMS[self._afk_kind]["durations"][0]
             if self._cfg.get("phrases", True) and random.random() < 0.5:
-                self._show_bubble(random.choice(AFK_ANIMS[self._afk_kind]["phrases"]))
+                self._show_bubble(random.choice(self._afk_phrases(self._afk_kind)))
         anim = AFK_ANIMS[self._afk_kind]
         if now >= self._afk_next:
             self._afk_idx = (self._afk_idx + 1) % len(anim["frames"])
             self._afk_next = now + anim["durations"][self._afk_idx]
         self._afk_frame = anim["frames"][self._afk_idx]
+        if self._afk_kind == "sick":
+            if self._afk_idx == 2 and not self._afk_vomit_done:
+                self._leave_vomit()
+                self._afk_vomit_done = True
+            elif self._afk_idx == 3:
+                self._afk_kind = None
+                self._afk_frame = None

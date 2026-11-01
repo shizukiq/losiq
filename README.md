@@ -42,13 +42,15 @@ to shakes, chat events, and music — and slowly loses it when left alone.
 
 ## AFK mode
 
-After 45 seconds of being ignored, Luz1k picks one of three loops on its own:
+After 45 seconds of being ignored, Luz1k picks a loop on its own:
 
 - 🚬 **vapes** — a tank-style pod (Aegis Boost / XROS vibes) held to its mouth,
   LED glow on the puff, vapor drifting across the screen;
 - 🍺 **drinks Zhiguli beer** — tilts the bottle for a gulp, then lowers it
   half-empty with a drop on its lip;
-- 🔪 **cuts its veins** — blade to the wrist, a cut, and blood running down.
+- 🔪 **cuts its veins** — blade to the wrist, a cut, and blood running down;
+- 🤢 **gets sick** — a stylized pixel puddle appears on the floor. Tap the
+  puddle to wipe it up and Luz1k thanks you.
 
 ## The shotgun
 
@@ -78,6 +80,21 @@ OpenAI-compatible API (OpenRouter, Groq, a local server). A backup provider is
 supported, message text is only shared behind a separate switch, and the AI can
 pick animations and decide where the pet walks.
 
+## Chat and temper
+
+Only the **ПСИХ** temper opens chats on its own and can write there — its chaos
+roll now picks one action at a time, so opening a chat is a real, frequent
+outcome instead of being crowded out. Writing is behind the «Сам пишет в чаты»
+switch. Lower tempers just mutter their lines in a bubble and leave the chats
+alone.
+
+## Credits
+
+The pet's mood and lines reference **Alex G**, **«Автостопом по фазе сна»**,
+**Cupsize** and **wifiskeleton**. Some short excerpts supplied by the plugin
+owner are included. Prepared sensitive lines are opt-in, shown only in local
+bubbles/scenes, and never sent to chats.
+
 ## Privacy
 
 - The brain is a single JSON file inside the app's private storage.
@@ -87,11 +104,16 @@ pick animations and decide where the pet walks.
 
 ## Settings
 
-Show or hide the pet, pick a size (small/medium/large) and a palette (original
-sketch, dark inversion, acid punk), toggle gravity, wandering, phrases,
+Show or hide the pet, pick a size (small/medium/large), a palette (original
+sketch, dark inversion, acid punk) and a look — pixel sketch or one of your own
+avatar images. Avatars are any files named `luz1k_avatar*.png/jpg` in the
+plugin's data folder (or a folder you set); each one shows up in the
+«Внешний вид» list. Animations and AFK scenes still use the pixel sprite.
+Toggle gravity, wandering, phrases,
 haptics, shake detection, Telegram events, and music reactions, set the sleep
 timeout, configure the brain (name, about, self-learning, sharing, forget
-everything), and set up the AI provider, key, model, URL, and chat frequency.
+everything), opt into sensitive self-harm references (local bubbles only), and
+set up the AI provider, key, model, URL, and chat frequency.
 
 ## Compatibility
 
