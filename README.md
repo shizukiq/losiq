@@ -6,7 +6,7 @@
 
 Tap it, pet it, throw it, shake the phone — or see how long it takes to light up a vape.
 
-![Version](https://img.shields.io/badge/version-2.5-d9a86c?style=flat-square)
+![Version](https://img.shields.io/badge/version-2.7-d9a86c?style=flat-square)
 ![ExteraGram](https://img.shields.io/badge/ExteraGram-12.10.6%2B-6f665c?style=flat-square)
 ![Plugin SDK](https://img.shields.io/badge/Plugin%20SDK-1.4.5.7%2B-9b7fd4?style=flat-square)
 
@@ -31,6 +31,10 @@ to shakes, chat events, and music — and slowly loses it when left alone.
 | Flick | Throw it — it tumbles across the screen. |
 | Shake the phone | It flings around with bounce physics (accelerometer). |
 | Flick it upward | It hangs off the status bar by its hands. |
+| Tap 5 times | Opens a chat window — type and Luz1k answers (AI or his own lines). |
+
+Shaking the phone now ends with him getting sick and leaving a pixel puddle you
+can wipe up with a tap.
 
 ## Behavior
 
@@ -106,9 +110,21 @@ bubbles/scenes, and never sent to chats.
 
 Show or hide the pet, pick a size (small/medium/large), a palette (original
 sketch, dark inversion, acid punk) and a look — pixel sketch or one of your own
-avatar images. Avatars are any files named `luz1k_avatar*.png/jpg` in the
-plugin's data folder (or a folder you set); each one shows up in the
-«Внешний вид» list. Animations and AFK scenes still use the pixel sprite.
+pictures. The easiest way to add one: in the appearance settings tap
+«Загрузить из галереи», pick a photo, crop it in the sticker-style window
+(drag to move, pinch to zoom, «Повернуть» to rotate) — the cropped picture is
+saved and applied right away. You can also long-press any photo in a chat and
+pick «Поставить Луз1ку аватар», or drop files named `luz1k_avatar*.png/jpg`
+into the plugin's data folder (or a folder you set); each one shows up in the
+«Внешний вид» list. A built-in **H4TE BOY** avatar ships with the plugin and is
+already in that list — no files to copy.
+
+Your picture is a full model, not a sticker: it breathes and sways while idle,
+waddles on walks, tumbles when thrown, hangs by its hands, sleeps on the rope,
+and plays every scene — the vape pod, the Zhiguli bottle, the blade, the
+pixel puddle, the shotgun — with the pixel props, vapor, drops and gore drawn
+around your image instead of swapping back to the pixel sprite.
+
 Toggle gravity, wandering, phrases,
 haptics, shake detection, Telegram events, and music reactions, set the sleep
 timeout, configure the brain (name, about, self-learning, sharing, forget
