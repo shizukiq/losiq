@@ -6,7 +6,7 @@
 
 Tap it, pet it, throw it, shake the phone — or see how long it takes to light up a vape.
 
-![Version](https://img.shields.io/badge/version-2.7-d9a86c?style=flat-square)
+![Version](https://img.shields.io/badge/version-2.8-d9a86c?style=flat-square)
 ![ExteraGram](https://img.shields.io/badge/ExteraGram-12.10.6%2B-6f665c?style=flat-square)
 ![Plugin SDK](https://img.shields.io/badge/Plugin%20SDK-1.4.5.7%2B-9b7fd4?style=flat-square)
 
@@ -89,8 +89,10 @@ pick animations and decide where the pet walks.
 Only the **ПСИХ** temper opens chats on its own and can write there — its chaos
 roll now picks one action at a time, so opening a chat is a real, frequent
 outcome instead of being crowded out. Writing is behind the «Сам пишет в чаты»
-switch. Lower tempers just mutter their lines in a bubble and leave the chats
-alone.
+switch. The default avatar sends from `DEFAULT_CHAOS_LINES`, assembled from
+`CHAT_LINES`, `CUPSIZE_LINES`, and `APFS_LINES`. H4TE BOY uses
+`H4TE_CHAOS_LINES`, which includes its existing lines and Alex G excerpts.
+Lower tempers just mutter their lines in a bubble and leave the chats alone.
 
 ## Credits
 
@@ -116,8 +118,9 @@ pictures. The easiest way to add one: in the appearance settings tap
 saved and applied right away. You can also long-press any photo in a chat and
 pick «Поставить Луз1ку аватар», or drop files named `luz1k_avatar*.png/jpg`
 into the plugin's data folder (or a folder you set); each one shows up in the
-«Внешний вид» list. A built-in **H4TE BOY** avatar ships with the plugin and is
-already in that list — no files to copy.
+«Внешний вид» list. Built-in **H4TE BOY** and **ЛУЗ1К** (the original sketch,
+cut out of the photo) avatars ship with the plugin and are already in that
+list — no files to copy.
 
 Your picture is a full model, not a sticker: it breathes and sways while idle,
 waddles on walks, tumbles when thrown, hangs by its hands, sleeps on the rope,

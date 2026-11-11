@@ -61,7 +61,7 @@ __description__ = (
     "Реплики может генерировать нейросеть (Gemini или любой OpenAI-совместимый API)."
 )
 __author__ = "@shizukiqx"
-__version__ = "2.7"
+__version__ = "2.8"
 __app_version__ = ">=12.10.6"
 __sdk_version__ = ">=1.4.5.7"
 __category__ = ["fun", "integrations"]
@@ -494,8 +494,113 @@ H4TE_AVATAR_PROPS = {
     "shot_gone": _cells_of(_shotgun_gone()),
 }
 
+# ЛУЗ1К — встроенный скетч (тот самый рисунок). Пропсы собраны под его анатомию:
+# рот (8.8, 10.4), правая ладонь (12, 16), левое запястье (4, 16), правый висок (12, 6.5).
+_LUZ_POD = [
+    (8, 10, "M"), (9, 10, "M"),                     # мундштук у губ
+    (10, 11, "M"),                                  # изгиб ото рта
+    (11, 12, "M"),                                  # стык
+    (12, 13, "M"),                                  # переход к баку
+    (11, 14, "M"), (12, 14, "M"), (13, 14, "M"),     # верх бака (в ладони)
+    (11, 15, "M"), (12, 15, "W"), (13, 15, "M"),     # окно: воздух над жидкостью
+    (11, 16, "M"), (12, 16, "U"), (13, 16, "M"),     # окно: жидкость
+    (11, 17, "M"), (12, 17, "M"), (13, 17, "M"),     # корпус в ладони
+    (12, 18, "K"), (13, 18, "K"),                   # днище
+]
+_LUZ_POD_CLOUD = [
+    (7, 9), (6, 9), (6, 10), (5, 10), (4, 10), (5, 11), (3, 11),
+    (4, 12), (2, 12), (3, 13), (1, 13), (2, 14), (1, 15), (0, 14),
+]
+_LUZ_BEER = [
+    (9, 10, "B"), (10, 10, "B"),                    # горлышко в губах
+    (10, 11, "B"), (11, 11, "B"),                   # наклон к кисти
+    (11, 12, "B"), (12, 12, "B"),                   # плечики
+    (11, 13, "K"), (12, 13, "U"), (13, 13, "K"),
+    (11, 14, "K"), (12, 14, "B"), (13, 14, "K"),
+    (11, 15, "K"), (12, 15, "D"), (13, 15, "K"),    # этикетка
+    (11, 16, "K"), (12, 16, "U"), (13, 16, "K"),
+    (11, 17, "K"), (12, 17, "K"), (13, 17, "K"),    # днище
+]
+_LUZ_BEER_DONE = [
+    (12, 14, "B"), (13, 14, "B"),                   # горлышко опущено у кисти
+    (11, 15, "K"), (12, 15, "U"), (13, 15, "K"),
+    (11, 16, "K"), (12, 16, "B"), (13, 16, "K"),
+    (11, 17, "K"), (12, 17, "D"), (13, 17, "K"),    # этикетка
+    (11, 18, "K"), (12, 18, "K"), (13, 18, "K"),    # днище
+    (10, 11, "P"),                                  # капля с губы
+]
+_LUZ_VEIN_AIM = [
+    (0, 16, "D"), (1, 16, "D"),                     # рукоять лезвия
+    (2, 16, "M"), (3, 16, "M"), (4, 16, "M"), (5, 16, "M"),  # лезвие поперёк запястья
+]
+_LUZ_VEIN_CUT = [
+    (3, 16, "R"), (4, 16, "Q"), (5, 16, "R"),       # порез через запястье
+    (4, 17, "R"), (5, 17, "Q"),                     # первая струйка
+    (0, 15, "D"), (1, 15, "D"),                     # лезвие отводится
+    (2, 15, "M"), (3, 15, "M"),
+]
+_LUZ_VEIN_DRIP = [
+    (3, 16, "R"), (4, 16, "Q"), (5, 16, "R"),       # порез
+    (4, 17, "R"), (4, 18, "Q"),                     # струя по кисти
+    (4, 19, "R"), (3, 19, "R"),
+    (4, 20, "R"), (5, 21, "R"), (3, 21, "Q"),       # капли срываются
+    (5, 22, "R"), (3, 23, "R"),
+    (4, 24, "R"), (3, 25, "Q"),
+    (2, 26, "R"), (1, 26, "Q"), (2, 27, "R"),       # лужица у ботинка
+    (16, 26, "M"), (17, 27, "M"),                   # лезвие брошено у края
+]
+
+
+def _luz_flash_cells():
+    """Компактная вспышка у правого виска скетча."""
+    cells = []
+    for y in range(4, 11):
+        for x in range(8, 15):
+            dx = x - 11.5
+            dy = (y - 6.8) * 1.2
+            d2 = dx * dx + dy * dy
+            if d2 <= 7:
+                if d2 < 2:
+                    cells.append((x, y, "K"))
+                elif (x + y) % 3 == 0:
+                    cells.append((x, y, "O"))
+                else:
+                    cells.append((x, y, "F"))
+    return cells
+
+
+LUZ1K_AVATAR_PROPS = {
+    "pod_a": _LUZ_POD,
+    "pod_b": _LUZ_POD + [(12, 18, "O"), (12, 15, "U")],
+    "pod_c": _LUZ_POD + [(12, 18, "O")] + [(x, y, "V") for x, y in _LUZ_POD_CLOUD],
+    "beer_a": _LUZ_BEER,
+    "beer_b": _LUZ_BEER + [(8, 10, "E"), (8, 11, "E")],
+    "beer_c": _LUZ_BEER_DONE,
+    "vein_a": _LUZ_VEIN_AIM,
+    "vein_b": _LUZ_VEIN_CUT,
+    "vein_c": _LUZ_VEIN_DRIP,
+    "sick_a": _SICK_A,
+    "sick_b": _SICK_B,
+    "sick_c": _SICK_C,
+    "shot_aim": [
+        (11, 7, "M"), (12, 7, "M"), (13, 7, "M"), (14, 7, "M"),
+        (14, 6, "D"), (15, 6, "D"), (14, 8, "D"), (15, 8, "D"), (15, 7, "M"),
+    ],
+    "shot_flash": _luz_flash_cells(),
+    "shot_gone": _cells_of(_shotgun_gone()),
+}
+
+# Точки своей картинки для частиц: рот (пар, капли) и запястье (кровь)
+# как доля ширины/высоты вью. У каждого встроенного аватара свои.
+AVATAR_FX_POINTS = {
+    "luz1k_avatar0_h4teboy.png": {"mouth": (0.45, 0.47), "wrist": (0.22, 0.79)},
+    "luz1k_avatar1_luz1k.png": {"mouth": (0.49, 0.37), "wrist": (0.23, 0.59)},
+}
+AVATAR_FX_DEFAULT = {"mouth": (0.6, 0.32), "wrist": (0.25, 0.55)}
+
 AVATAR_PROP_SETS = {
     "luz1k_avatar0_h4teboy.png": H4TE_AVATAR_PROPS,
+    "luz1k_avatar1_luz1k.png": LUZ1K_AVATAR_PROPS,
 }
 
 # Верёвка, за которую висит Луз1к во сне: рисуется ПОД картинкой.
@@ -514,7 +619,7 @@ CROP_MAX_SIDE = 640
 AVATAR_HINT = (
     "Свои аватары берутся из папки данных плагина: положи туда файлы вида "
     f"{AVATAR_PREFIX}1.png, {AVATAR_PREFIX}2.png — они появятся в списке «Внешний вид». "
-    "Встроенный H4TE BOY уже там."
+    "Встроенные H4TE BOY и ЛУЗ1К (скетч) уже там."
 )
 
 # Встроенный аватар: H4TE BOY. Лежит в base64, чтобы .plugin оставался одним файлом.
@@ -671,8 +776,165 @@ BUILTIN_AVATARS = (
             "lPmS008VZxiP+KiPwfv/mrLiDpP1cxIAAAAASUVORK5CYII="
         ),
     ),
+    # ЛУЗ1К — оригинальный скетч с фото, фон убран, рисунок не тронут.
+    (
+        "ЛУЗ1К",
+        "luz1k_avatar1_luz1k.png",
+        (
+            "iVBORw0KGgoAAAANSUhEUgAAAS0AAAJ3CAMAAAD2wPfQAAADAFBMVEUAAAD+/v4AAABXV1d3d3en",
+            "p6dnZ2eGhobIyMjn5+cnJyc3NzcAAAAXFxcAAABGRkaXl5e4uLjX19cAAAAAAAAAAAAAAACIABvv",
+            "R03vZ23sHCSMCiPwU1n71NbzxsphR0zGhZKdLUP1h4v5ur3sJi30o6b2lprBe4nzdnugNUqnRFjN",
+            "l6LuNDtpOkOQEiuRdHqkZHDvO0L63+CaJj2eMUasTWDZvMLxXWL0fIHKkp33nqLQtLr6vcC/v8AA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAABA+1c9AAABAHRSTlMA//7///////////+r/43/////cE3QL///////////////",
+            "/////////////////////////////////////wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA04LPCAAA",
+            "HJZJREFUeNrtnWl747bOhpPIu7zIdpxOp+m002W6r2fvOe///1svQsQcGlxESqIs2w8+zOVJbEm8",
+            "FUMAiOXuDgI5k+yVgANogda55Onp8cGQ5XL59PQELKAFWn3K4+MJqqMcQAa0QOvcqF6EfpX11Ov1",
+            "+uWmHA6XY7aAFmhlMhyeHvySldZ+v+7zzjjXTncp5bygRbxAKwst0hkBWvnUiXAdWPr0HkxtTY4L",
+            "aIHWGWnZtsNisTD/S0/4TE8fukCbljgd/ZfelumOiT+TiLOAFmjloiUuuSzL6XTaOS26kI9++uHV",
+            "U/coyoNzNfS6W5XmtJvqTgFaoJWFlq20xuNxS1oav/lBWzk5zYejRf+kjiPtmmiTKMGbl3fqsAQt",
+            "0Oqflq207u/v29Ay9ZPpJdsXJd4pnuS+33bldgcCCSFah7PQKsuNOAtoXRUt+xOktIhWVVWNaQll",
+            "oD9rXdNqs9n4rpc+5fPzu1JdTjfieK8eL4rWaDRarVagdcG0RJSXlRYJMWt8gZZJ4jXbfTxIJpNJ",
+            "IN6WdYNLrXcNWqDVJy3x3aVHOtOazbanlmRaKoTzmf+QInTfAr9t71uLhdv3DbRAq09aIs46m82Y",
+            "1ny+a3OB4lpYDTy0ELGalua8bTcJi8mzXtACrVy0xFvuDRGGdqIRsbdPnsQjvAfVkpbwNhaL0l6v",
+            "a/MHtEDrDLTsr3LSNdoRmDCtotgE7PpuaQltTSu1Q3quv47eaI1Gk8a06LOgdVW0SMQ1JtkRtV+9",
+            "eDd6t5t1aEHYOnU+nyv3ZVZnzl8IrR1oXTwt/pyW8biyNgFj3etak8GiVXj02YSuRNBq41ULpbXZ",
+            "FHq91p/GxdGivznQugZapCGE6iqKIiVNIHZTJV5v8SV1FWm2tel2u9WLFUE1SzuC1nY7A60stMSX",
+            "2PyzPMrctiMigcWrrtVqMRqNXFb8VAXb5p3QshMrTKVFInSn5VgPnBbvE4DWRdIS32O6ZIuWw8iN",
+            "D3dFqi66ajs7abPZ8AWQn+jczm1pwtt6ejodBbM/GtOK/PMCrdulJb7KHHO1hfRZsy9jpOoiVAIJ",
+            "WS6+s8ebMOGsBw5rnfou4ewP0AKtXLTs1egN2Dhg6wbmsy1sudC/BInUlVhHm/QoH6rJpF5DWyGE",
+            "26C1B60z0LLNeacRcQQ2bqS9nsJ7rToh0SeNk/fpb8FpwphK8cRtqXcaQAu0ctESRgStI3DhQoXo",
+            "73c49GurLrpeUhJ0Z3Q2YkCEwx1ZYO0rfBGetJC6kDZogVYuWna8uarGgePZ+RExO6LizUR9ruQ+",
+            "QurCTjVFAPGo7Lwk16JqXQLQAq2GtKxi4U34kD5gYh38AD8oqTXnF+TRl+VkMplOKzLqTZARK6jR",
+            "VWHD4fTOTOruzHrtKK0O6vqstKagdT207E4D5p5kvF1vGtqpeRC2EDyyHehEYtPJaa2EOa1WC65S",
+            "rZUIv2GwtCYT0LpwWrZvHfMVJ2Pc3pjVX/fU3MB4qb14Kz1gdB8tQiV7AnigBVq5aNnhWDs7yRUQ",
+            "2gW6FGQSskpMIyJQIa189919isRFtZvSmvtohet2+qI1iVkFaOWllRRyDtu/fX4lfc2BOH52ny6W",
+            "3gIt0OqblnXaVfxJqqrKp6iShG5d6nMwcOf9+0tXQytVs4NWdlp2PDhmQ8a0JnwKjNvNco5DqYRe",
+            "0H/p/YR5u93S+kjN0NOblCX9qjF4OmZtPCBsbKeEz9vQopP5ClwJT1WB1m3TEq7warVIPeFstiUi",
+            "qaskPERuu/0/fRziR/Doh2W5aBAYi4xmcRqUjmrbmiQl16p3WjPQulpaznY4DRTAdjsON9Dy7/yU",
+            "9hlpNbQmUmlJx4xhxj4073HZZQF1qU/XRIsOBVoDomXv8vsy6JNyiBooHlc12ys5pc+KSCuDjBXf",
+            "oYwi0ZWzbjW9MmexWIAWaHVDy9e5OT5S69sIamCYh2MvSplNYk5HpoEz+4k/S0RFD86H2AzEC6JF",
+            "S6Q/YtC6GFqNH4t0OfZXX6ye03JJRkroJ7VrnU6rGHvc16rEdBgCt13sXKV0wwUt0MpFy97PrLXo",
+            "6XoD61a7oN6EXHKgiV/Ae46PT9F1hu1950ZWVU2bKi1nOld7WoH0ZdC6IVrOzgSBjZTAWJ6AVe5E",
+            "7lxrZFq9acUEmHFDr0A2e2p7eNACrXy0bNXlS6L3P7pXMQ9/50auqQJ1x5H0jAavV8GdG31FJekN",
+            "L89IazwGraum5SzBJO9TqBCf8R42GSLz1olTUoJtkk71uRFNJ9y2oeXz+UELtLx56HQG7Zv6MmrC",
+            "hcb9y2w2i9wsimmdkkLLLJjx6fek6CFo3SgtXx0Y6SRn8hF9T5vlxuaXeWA2Ql1C7u3RugetYdHy",
+            "1YU4UdEDv6XVkFsCBVztNBZogVZ2Wnd1I1KPqArno7vl+nhKVJv8d/FktO13UZEGWtbmNGgNhZZo",
+            "KXewTuhEpXpYrtoA4750DKwrw8TurJm4vQNaoHVOWsGgly8CPSmKorY5ldiGNW2QqqpUdctI7Y6u",
+            "utJebaZoJordCAy0QKsb7WXbDj6NQhc1eZGRvfOjVJHNeC6SglWC7ZiOwIkStU3s4veU0rNxz0qr",
+            "AC3QqkmO8O2vcl0midoCLV2aY2W74KylDHgvaex0ENZY4cz3JNNErKLNxLwUWr68LtACrSTbYR9j",
+            "wh9VTslVX5xk1KDWmTDz8fkgR4NiksO37tqrBi3Qykgr3nbgUk5SS9znlf4V6Xgxcmym/nIQ3s5l",
+            "J7sjc77M7FiDFmhloWUHagK5Qmogz1jT4knmqQsi3upufKTFR+7EiBCONWiB1oXQerJbg/g2Wunn",
+            "zEbTMpaeRkuZ8Ce0IqeOROREFB3lA0bTugct0Oo+uhxIhKclcozKpNVgleSLszNNH9W0uBL00mgF",
+            "CvBAC7Sa5+qGZ4zsdrNj166PtGi5MS3YXXpL0qL/ghZo3SAtV/3+ON4MZ1pqykGZSouNjouyIEAL",
+            "tHLRsrpU1vvH3ErEpKXNima09P3pipbwqkELtIZPK9wewCmz2VZZGd3QIr9Bu6WkbzopUBMlZaAF",
+            "WgOnZacg1e6j0hI5lc/0qtvQ4pQK8cOWkidRF7RAKxctO/chQmnNuAmWGnV+QkvlFs1TaakudxMV",
+            "MHvZO9oqaYOK/P4umouAFmj1R0skA8Y04KGlEC01HmSqafHAkCQzXBsLxIwTkTh9ng7SZhTUvav7",
+            "SJ7Uyca0NhvQAq2gIR+zXJUSOGVznl4QM9JYjCr+4U8qipGbtMpyoyLWbdMDRTpSet+7m6Il3B7Q",
+            "Ogutp8hkQJEHQdqFTIaXohUl/MzX9riyzWuo00fVTI/VkVbBE9Hpdcv4lj0qpLN0JNACrTy07N2e",
+            "yCsaGUJs1OTEjxMgWZM5RTX3+pg3oeyFimnxcJ4k5ee5D5M8ZSud0ioErZVbXluhgdaV0xIudTj9",
+            "Qaiu42iCCYtZEq3S50dzKTtOoNCetPryzrhHAg89oP8aFWZNxB4m2V1Rdb+05qB1Q7TEvmtSv2T+",
+            "ahEne4vGl1XERdinRsSWtRnb7wSspdKy5311Vz0GWqDVE62uKim5kIWcZl3NwVxFbSirq0oJuwUt",
+            "9125BC1P9GE4tMbjiv/sQOtqaTWoyAzEwHR2HruHzoOr/duK/GkVMGu76WorrU5Lx3qktQIt0OpW",
+            "5uExQR2KvePadbMf0AKtS6VFquhY49L8CPF7ud1NCwEt0OqVlohvpRaB1QpPtWqTzhDZG4+cgMxK",
+            "C7RAKyOtx8e9mBDSLS2ebdUs0Y8tghjrgzMKLaW1By3QuhRaDZLlbR4+1cLbL7z/E6Zitxdi06N2",
+            "KDSLPTmk07AWaIFWdlp2b4NaI4L3UfV/VevHlS/axA2YfW8w0xZMMKTnOFAdg8o5hS9DB8oB0xor",
+            "WuPIP27QGigtuwFe+DJJDy0WH8u8BDxD8Wz1LAJOgQ9sEJm/raopF6/EfQ0nnY51jXB+QAu0skl8",
+            "U1hzQbrNuXPDh96gt1LJlCDAtc84MiWUPbKJjEw7UR0Oy7u80g+t2hnzTKssQeuKaNmPRbKjw5fM",
+            "U2EJCX1xuGcPy3Q6op+o791YKCf18wV9imz/8YlUKsewUHcgKlOej+YcxJdnokNuWiL/Q9Pi3JET",
+            "VlUzWiVoXQCtO89E9Jj9Fm5OUByFXpel9/HHE8uJZXEiE7P/VsQZKzualdmEv2havumhoDVEWk9P",
+            "7rmvDZL1uDba96vUbnkxVkO/qEALtPKK2P+JmWAQ2IFxGfgvUavG2UmK9GoYqAK0Ugtv8tHyGQ6K",
+            "1hNoDZfWnasD0HFXtkzaQSXPWBgRhEptKDXZhiW7w+cV8vZOL/Y7aIHWIIDxdlCk1uEeA9wkjzsW",
+            "NENFvnvAZFCVmuu7cwpogVZWU+IxcIGihDrgbatQ1obc6HjMp/Gz0UNQMgz5Ay3QGhAtzlRaLg+B",
+            "K1VNerb3GYTrPsOclsvl+awG0AKt/q2JdfiqOajsG7PYwGZ3phdZ6urxbogSsL20R9QprS1o3Qqt",
+            "owJb1q6gzcABgs1dn2vPkjnVCLRAa+hC1r29PWuLat7z0jskstyE3hkIXAlOwzMZWtIiXqAFWg0N",
+            "ijhmr99K9qe5VRRP4jo2zytUln2UDNJsz03LkElRbFJorUHr+mkF0iXyyd0FC2iBVi6x83lzy8Uq",
+            "LdACrYxiVZtVyh4v21PhVnmz2VZY94PZ2BkmLbLGQOvmaNnmg3CRufokCRLXsvCkDF2glqff+ZBo",
+            "zdvQMjfbuK0SaN0WLau9euHbPtXlLKpOhQfTrPgFu9rc7ts5l5LICVqPj4/r9b73HO+h0XJurYHW",
+            "LdISwa3IPjPpeRCzQEIuYbsQ6/4stE4fG6B1jbTsTl3Zui/PI1Ih9qAFWrdGyxnT6rx7pSkxDkH+",
+            "niLXResAWhdMK5D+0NXkH6dE7s2etXoMtECrJwmn6GYy5J20OHI2bO0FWqCVSWPVZMq3n4IVLMsu",
+            "7XP5qsoGEIoGLdDKZTjU7pXe5xSxuW/uNqpul3YO7x60QOvKaNlxLK5DPN3teR3ULHo2Rwq3snN6",
+            "A9yzWVRzCmuF2ycMI3GpR1oFaN0UrSfbjeac99Nub9N7Y9wxr1vlL7z2ZlbvX9Gy1PiCidNU55Z4",
+            "PGmEN3IJFf9K6C272zr3EDq/HdEhrYectLagdWG0bFSsooSbywlE3MtHr5uz1Pg1h4p3uxl/0ASm",
+            "P8WMeTYd0VJd1V9RCZvdOfdgOh2dW3V1QWsBWqAlxa6fJgxqRshO/JwzicydGdMb5lgUI1SzRLhX",
+            "0EhrKd09SGs4NVVyo0wVujnzGFr2Pey36nowtO5B66po2ah0J1cxUpWQ6Gc4Z/7pnAjzwa77Fesf",
+            "qnY+DHKh38CAyc7gn/N9iKSlVWDvBWfptMb8ugWtaUtaIrMetIZIy9lNRI+dFNfOGoj1Df2K9Y0O",
+            "Qelphuxq6wWxQuI3s2JjX9lUfr4z+qdyzc/REKgLWuMjrQlogVYIldnCx4r7vvxKI2GVoxfE+sy0",
+            "7tlY0Knx9IIPyA6BHTNLoSVHGeT3rSNole1pmRVB+WjlTxgErXZ5f6KTlp2cy2VerIr4teahbfN7",
+            "YyIrqTprVOyr0WEYJk1o2YEu0AKti6PlbGcqUGm3+GjgL/RTkk2Ao8O4MRNsdeaC1itGVu/ccMTn",
+            "ztyKeFq2b50tlR60QCsLLWeyg91XUly4Cg/PzSiXGnX+CsPUZ7xNqmnpffwj3dKkyyvW70miJd6c",
+            "Z5qBM0MLtEArS7KDM/FWZECorsw7c7lHeCuOhOnBy+ZMSDHq3LQ4WAVqqGxWJNESRkSGvN0MtB5A",
+            "C7Tcu6ye0cdzZwWnqOPcvEhhL4LMDbLixZsZjL4zanLdgt7MQVdWXUm07Iu8IVoFaF0wLbskxTem",
+            "VaiETio4dbKS3bZZWzGJtKQ532lChIvWxENrDFqg1VxpBUYiW4Z8NxWcvqkjvFPPfZ2TaIkKs04d",
+            "67PT8gloXTYtO1ATyHYXO4lZKziPqfTbdAtCvr+71CTQAq1ctNbrZUw3OzP41E8FZ2D1EbQy7e+L",
+            "nWnQAq2uaDnCWqI5q2lD+nrBDoQWt6R1TQQ6gBZoDZlWYPJAWW6qahwM15QDocXD1U1IdieS7LTK",
+            "S6NVgtaAaAl/ujDE/CEPqROdy3O71OEtX7oYIiQ6shen0nWIC7RAKwstMXmg8IhZuRKxKdQHrZjL",
+            "FrRat1cHLdDKRcs2H4qgWFkS43PRWiwWRYR0GmwGLdDKRcs2H5I0gdPzzrr5E3lXnVfbOtgMWqCV",
+            "hZZIBhQniTn/bLbrjZaZV9iMVrtcXdACrVy0RJGK8zzh82ebGeLMhNo2tnS6yNUFLdDKRSsQ2Qoo",
+            "MLvTTz8iuk6GCfl+DlqgNUBa8SEi38nvexSuSxMXnBScaxdsBi3QykJL5APGPJCtk6/OSCveou8i",
+            "2AxaoJWLlogxp572IfNEu0i9lR7i2oMWaA2KVowhHz6z2ZKnF1qzlhfcIlcXtEArE62n1IQC++Th",
+            "tPqz03JmCDYMcYEWaOWh5TPkkzzUPhMDY+JbgSW0C3GBFmjloiX6GUSeU5x2tXrNCZq0llGEhKNZ",
+            "tfHyFiEu0AKtXLTiXepAZPe8EqlouwhxgRZonZ9WILOgLMuiRxF90HvMEAQt0BoQLRLReavoXRqf",
+            "vZ1jDVqgdQZaDR7j56VVe4V2twPQAq1h0hI+K3m54/F4Pp/rLnTjsbN7xzllsVjpTWA9e3G73c6U",
+            "cP23qD1tas5H0NpeIq3ZUUBrKLTMo5rDrJiWHhHZOCcoh95iTlxOyr8yZyxwWJq8DbrnohFXujkf",
+            "pFVcEC0mVEdrBFpno8VfQJ7SY8wfeC1l1v11xK5Lz8BsVLpuJkCL/2t55AfQAq0h0BLVYzwai9uT",
+            "82un3hJTl88opGjNohkx+sCmZTfwS9n5AS3Qykdr78xoYKNYN3xlPMVxQIY9wr43BSZOJFrS1uqt",
+            "+5cZRIum5jxogVZPtLRmYpdK/5fPyXnx9jDV3oCJU5ijm+tobYRu05LSAQi0QKsnWpOJxrMVRgS/",
+            "QbSi7JOZfXB7WoJQt3ohJi2hdFMca9ACrVy0xHxXM9+WJ0nqKxKDJZvlDTUWMR3LAGZ24DOnN5+0",
+            "CDLXJRyRlBIW0AKtLLTIoRRzJU2bl89Dbmtx2v/YJ8Q10Le1DbPwMbWZI+auOyNztgWUQsvOxAIt",
+            "0OqAlpjeoyPNnLpeq6gEQragnVsrnaTyBYQIkdUg/A9T3ZotM9mmMPKSuqBVgFantIRcOy170nK8",
+            "LJXYtHRAdzodxWi71MSiQFKDHfHSceXTEjTQAq1Gko1WYIBPWDgmFKClhcyKlk5AzI0SBoVuVcsa",
+            "VJR9g5aX1gS0zkMrFRhdo7lDEkNLh3tpEUlqLCCc5x6+crpFOofR1GS73U5EmlNiEKAFWrlo6Xhz",
+            "wJpYLtfOLcp4WmZsibyEJGy0aOEc6IoTuqpII2ilJKCDQQu0hkDLiHg97o9C1xLO1mlAy+zcQ8bF",
+            "i/NebEjHLBaL1VHotfLsX8pAdru5nRQsar9EUlWqtBv5oFFlprVT0UOiVQRocW4WaF0DrSRpQ6tN",
+            "E0pnFWYzv6T1iC3QAi3QSjaFzocKtEDrsmmRBUGHnU5HkbS0JUQkSJM5ydEP++U0eFp3oAVabi21",
+            "3W6PXmQnPUKGIJlpTUELtLqhRR/n/gpavvjiCwJGX0lrlwa0QAu0ctHSqOjFb7/99vvvv3/yySfv",
+            "3//9yy+/5OpSkxdogRZo5bMgdKOCX3/99RMln332Gf3zz3/+90zhYdACrdu15Um+++67H3/8kZUW",
+            "vdYVbKDlEmIEWqCVK771j3/8SBrr3bt3Zi0paIEWaPUeaZ5/qgS0QAu0ctOaTCar1aosS7PGS8vz",
+            "85u3b7/58885aIEWaOWjZfYBNpuaaCGl9fz8L+gt0AKtrLRE+xDR047kjz/++Oabn0ELtECrAS2y",
+            "BQIDJDUSu0ur2eSV5Y0S0AIt0GpEa6wTGX755ZcvlOifjMfbY+udkyZYi0VpKzZC9fz8DFqgBVpt",
+            "LIiffvqP3j6dzXZzJb7GkHafVyG3RGu3Ay3Q6o7WfP7nDz/8wNkM9uoFLdE06xZpzUELtDJ51XPO",
+            "Knr//gcXrRFoNac1BS3QSohv/fTTl2RB/O1v70EritZ/QAu0stD6/vvvv/32W+fqYUGAFmj1Q+vd",
+            "u/+9ffv2zZtn0Iqi9TVogVYuvfXvf3//9u03n376/am3vbOHIYDWK623OhsStECrM1ofPnz4+eef",
+            "//rrxIhwtm3ebDagpWgJkwu0QKsDWm/evKTZfv75575OWqaczsgCLdACrc5oEaevv/5aNBTx0dLj",
+            "nW+a1v9AC7S6p1XrTDtpffjwl6nqbprWCLRAKwutwOAspkXPUBXk+RS0Ymm9BS3QSqalZ+wE9NZX",
+            "X32lGxuAFmiBVgta83fvPnfSCsy7u11bHrRAKw+t5+dnEdYyKjhXoAVaoNUPLTIBdGcCkUEfmOnh",
+            "LCMDLdACrc5teTE00tJhq0AvLtACLdBqT2s+l3OPOQtJ5CXZ7UZY6Oe31DFd0SpAqwUte+LhVdNa",
+            "r09oTadV0h7i09OT4E0+t26abkpVVacToZegBVqgpUWMPiaVrVUXLVrNppv6UK3Xe3WEvW3R2+1/",
+            "RFTsHBPqQAu0hiukeJqNH18u18cjPNq/LcuNBka2Q1FsbIUHWqAFWqbEjzs+Xe7HIzT4+OPj4y3R",
+            "Mo8AWqDlMyL28avUQZtTh2CdSos+AlqgBVp2iEt0XLajfiJgbB7h8XHPfkAMp2Os+gBaoBVL6+EW",
+            "aD3pFsvb7bYoCr2Nw7NBSFGZ4efj+NaD6yCrQFEL3xA+1GJxuFQjIkxrA1qg1Sq+tTQyiTia5SuS",
+            "9tB6dQjIgeZu66YWJOp0E6qqMk6xv8xgM9Mq+qY1Ba0rp6WteD0Ua7fbsd5yjskK0GJz3kTCMxD0",
+            "RtDpr17NEGJM1/CoZK8EtIK01mvQunxaYpv04/bLdMrxYO0x0+L82RDzAK3pdGqXfhoe0YpOsd3O",
+            "1Gbs3hlWG4xZsVy6o37T/mg9GLQqp68FWpdHi67CZ2KL2EFRTJyJDGFarAJ9LbjIhN9sSvOM4qRk",
+            "sJTlYTC7som05uegtQCty6NlPg15xWRzi6LM1WphTs1qSivUqpkOTqew1ZXKm9gdGyccOL1iWLRm",
+            "/dPa7UDrmmmtnADix0v6aa1jmqbrg9gnHY8rbeCDFmhdNy16bt+3k05oeawM0AKtK6el8xSI1uwo",
+            "WyXjdHFWgIEWaIFWPK0OxWnLk1U+8QhZ8dPptKoqukV0r/TsSi26TvRwWN4KrUVTWjvQunha5VE2",
+            "L1KYQj/kyBO9oHUXLtFhqnw3RGfiD4yWIAFaoNXGgljoTAS9HbrbzVQi0sKI+5ZcfWJ2SecR6PRm",
+            "50Oe9RYdvzoVra7oX3qteG/4bqxORZSmgRZoXT0t9oz5tbagze0XDY/+5dgz12IyAGcyEVeSacBk",
+            "JhAbbfgTad0uiB0CsiHobWRZsHthJk2cewO2C1qLbmnxBi9oXTyt13x2qbfGdhcfLWRc86YQqzd6",
+            "PyGkJfIP7T1SrgoluuZwAzo4KSnz62x2CdKNceiqXoz53WwY3YAa0ZoHaT02pbVw0VpdLa3ltdPS",
+            "q6HrmlrCD3kSunZCwj6wwrPhHCIiS8tVuQybwIJ0/EzfGddu0pwtCJ0XzMekTx2zDi+IlhkvAK22",
+            "tJZhWg9XQuuuUfWzx+tdBo5PLOiekH7aRAt7+dqcBy3Qch9/2ZDWYWDdF4/56U3koCScuJdUnz34",
+            "zgegBVoXLGSnPDaSi20CBFqgBYHklP8HeMOVUXrP8KEAAAAASUVORK5CYII="
+        ),
+    ),
 )
-AVATAR_POOL_VERSION = 1
+# v1 — H4TE BOY встал первым встроенным, v2 — ЛУЗ1К добавлен вторым.
+AVATAR_POOL_STEPS = ((1, 1, 1), (2, 2, 1))
+AVATAR_POOL_VERSION = 2
 
 TEMPER_ITEMS = ["Святой", "Добрый", "Дерзкий", "Злой", "ПСИХ"]
 # 0..4: пауза между актами хаоса (сек, 0=никогда)
@@ -1347,23 +1609,6 @@ CHAT_LINES = (
     "подарю тебе кота, чтобы ты знала, что ты никогда не будешь одна",
     "предметы из моих, твоих воспоминаний",
     "я вновь решил всем доверять и верить",
-    "Walk around with my eyes on the ground",
-    "You look at me like I'm just some kinda fool",
-    "Been like this for like thirteen years",
-    "I spent most of my life swallowed up by my fears",
-    "I thought she was really cool",
-    "My girlfriend told me that she doesn't love me anymore",
-    "And my head in my ass 'cause I can't get it out",
-    "And keep the pace to save your face",
-    "You'll never make the place",
-    "Why do you even run the race?",
-    "My baby's alright",
-    "She just doesn't wanna see me tonight",
-    "Not for a minute, not for a second",
-    "Nothin' here for you to make right",
-    "I miss you so bad",
-    "Do you know what Sarah meant?",
-    "When she said, You be my guest?",
     "мой дресс-код неплохо впишется на кладбище",
     "я допил все наши стопки, извини, ты отходила",
     "мы развалимся в подъезде в ожидании поправки",
@@ -1394,6 +1639,49 @@ CHAT_LINES = (
     "десять тысяч машин, чей мотор устарел",
 )
 
+# Списки для обычного аватара. Сюда можно добавлять новые строки по исполнителю.
+CUPSIZE_LINES = ()
+APFS_LINES = (
+    "На машине автостопом",
+    "Мои руки — это космос, выглядит довольно странно",
+    "Меня научили в школе врать и воровать еду",
+    "Из разваленной столовой",
+    "Слишком часто — это мило, все политики — дебилы",
+)
+DEFAULT_CHAOS_LINES = CHAT_LINES + CUPSIZE_LINES + APFS_LINES
+
+# Автофразы H4TE BOY: его реплики и короткие фрагменты Alex G,
+# уже использовавшиеся в общем наборе.
+H4TE_CHAOS_LINES = (
+    "This audio made by h4teboy",
+    "В наушниках опять играет только одно ухо.",
+    "Кто-нибудь видел мой второй носок?",
+    "LOSERCLUB — это не клуб, это диагноз.",
+    "Не смотри на меня так.",
+    "Мне нравится дождь. Он тоже никому не нужен.",
+    "Давай набьём с тобой на пальцах бесконечность?",
+    "Давай с тобою будем чем-то вечным?",
+    "Холод за окном, тёплая кровать",
+    "Это волшебное время меня вскружило",
+    "Walk around with my eyes on the ground",
+    "You look at me like I'm just some kinda fool",
+    "Been like this for like thirteen years",
+    "I spent most of my life swallowed up by my fears",
+    "I thought she was really cool",
+    "My girlfriend told me that she doesn't love me anymore",
+    "And my head in my ass 'cause I can't get it out",
+    "And keep the pace to save your face",
+    "You'll never make the place",
+    "Why do you even run the race?",
+    "My baby's alright",
+    "She just doesn't wanna see me tonight",
+    "Not for a minute, not for a second",
+    "Nothin' here for you to make right",
+    "I miss you so bad",
+    "Do you know what Sarah meant?",
+    "When she said, You be my guest?",
+)
+
 # --- Окошко общения (5 тапов по Луз1ку) ---
 CHAT_OPENER = (
     "Луз1к: о, ты решил поговорить. Ну давай, я весь внимание… ну почти.",
@@ -1403,8 +1691,8 @@ CHAT_OPENER = (
 CHAT_HELLO = (
     "Луз1к: привет-привет. Я не спал, честно.",
     "Луз1к: о, ты! Я как раз скучал.",
-    "Луз1к: здрасьте. Я тут по стеночке стоял.",
-    "Луз1к: привет. Чаты молчат, ты пришёл — уже лучше.",
+    "Луз1к: здрасьте. Я тут вены пытался вскрыть.",
+    "Луз1к: привет. Голоса в голове молчат, ты пришёл — уже лучше.",
 )
 CHAT_HOWRU = (
     "Луз1к: да как… нормально. Пиксели на месте, холодильник гудит.",
@@ -1469,6 +1757,7 @@ CHAT_GENERIC = (
 
 # Окошко общения для H4TE BOY: свой голос и своё имя в префиксе.
 H4TE_CHAT = {
+    "chaos": H4TE_CHAOS_LINES,
     "opener": (
         "H4TE BOY: о, ты решил поговорить. Смело.",
         "H4TE BOY: я тут стоял и ненавидел обои. Ты вовремя.",
@@ -3304,11 +3593,14 @@ class Luz1kPetPlugin(BasePlugin):
         if version >= AVATAR_POOL_VERSION:
             return
         skin = int(self._cfg.get("skin", 0) or 0)
-        if skin >= 1:
-            skin += len(BUILTIN_AVATARS)
-            self._cfg["skin"] = skin
+        fixed = skin
+        for step_version, start, shift in AVATAR_POOL_STEPS:
+            if version < step_version and fixed >= start:
+                fixed += shift
+        if fixed != skin:
+            self._cfg["skin"] = fixed
             try:
-                self.set_setting("skin", skin)
+                self.set_setting("skin", fixed)
             except Exception as e:
                 log(f"[{__id__}] avatar migration error: {e}")
         try:
@@ -4813,9 +5105,13 @@ class Luz1kPetPlugin(BasePlugin):
             return False
         if not self._chat_dialog or now < self._next_chat_send:
             return False
+        chat_book = self._avatar_chat_book()
+        lines = chat_book.get("chaos", DEFAULT_CHAOS_LINES) if chat_book else DEFAULT_CHAOS_LINES
+        if not lines:
+            return False
         self._next_chat_send = now + random.uniform(25.0, 60.0)
         try:
-            send_text(self._chat_dialog, random.choice(CHAT_LINES))
+            send_text(self._chat_dialog, random.choice(lines))
         except Exception as e:
             log(f"[{__id__}] chaos write error: {e}")
             return False
@@ -7179,25 +7475,26 @@ class Luz1kPetPlugin(BasePlugin):
         kind = self._afk_kind
         if kind is None or now < self._next_afk_fx:
             return
-        h4te = self._avatar_key() == "luz1k_avatar0_h4teboy.png"
-        mouth_y = 0.47 if h4te else 0.32
+        fx = AVATAR_FX_POINTS.get(self._avatar_key(), AVATAR_FX_DEFAULT)
+        mouth_x, mouth_y = fx["mouth"]
+        wrist_x, wrist_y = fx["wrist"]
         if kind == "pod" and self._afk_idx >= 1:
             self._next_afk_fx = now + 0.55
             self._spawn_particle(
                 "vapor",
-                (self._x + self._w * (0.45 if h4te else 0.6),
+                (self._x + self._w * mouth_x,
                  self._y + self._hop_off + self._h * mouth_y),
             )
         elif kind == "beer" and self._afk_idx == 2:
             self._next_afk_fx = now + 0.9
             self._spawn_particle(
                 "beer",
-                (self._x + self._w * 0.5, self._y + self._hop_off + self._h * mouth_y),
+                (self._x + self._w * mouth_x, self._y + self._hop_off + self._h * mouth_y),
             )
         elif kind == "veins" and self._afk_idx >= 1:
             self._next_afk_fx = now + 0.75
             self._spawn_particle(
                 "blood",
-                (self._x + self._w * (0.22 if h4te else 0.25),
-                 self._y + self._hop_off + self._h * (0.79 if h4te else 0.55)),
+                (self._x + self._w * wrist_x,
+                 self._y + self._hop_off + self._h * wrist_y),
             )
