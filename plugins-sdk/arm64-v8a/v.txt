@@ -1,0 +1,3 @@
+1.4.5.7|0
+# IDEA sync test marker — autoSyncFiles=true, MakeProjectOnSave=true, compiler.automake=true
+# timestamp: 2026-11-15T22:45Z — если IDEA отображает это изменение в реальном времени, синхронизация настроена корректно.
