@@ -18,7 +18,7 @@ from android.hardware import Sensor, SensorEventListener, SensorManager
 from android.os import Build, Handler, Looper
 from android.util import TypedValue
 from android.view import Gravity, MotionEvent, Surface, View
-from android.widget import Button, EditText, FrameLayout, ImageView, LinearLayout, ScrollView, TextView
+from android.widget import Button, EditText, FrameLayout, ImageView, LinearLayout, ScrollView, TextView, Toast
 from java import dynamic_proxy, jarray, jclass, jint
 from org.telegram.messenger import AndroidUtilities, MediaController, MessagesController, NotificationCenter, UserObject
 from org.telegram.ui import ChatActivity, LaunchActivity
@@ -3514,6 +3514,14 @@ class Luz1kPetPlugin(BasePlugin):
                 icon="msg_stats",
                 on_change=lambda v: self._on_cfg_change("ai2_model", str(v or "").strip()),
             ),
+            Selector(
+                key="ai2_provider",
+                text="Тип резервного API",
+                default=1,
+                items=AI_PROVIDERS,
+                icon="msg_settings",
+                on_change=lambda v: self._on_cfg_change("ai2_provider", int(v)),
+            ),
             Header(text="Сбои и проверка"),
             Switch(
                 key="ai_fallback",
@@ -3653,7 +3661,16 @@ class Luz1kPetPlugin(BasePlugin):
                 return
             except Exception:
                 pass
-        self._show_bubble(text)
+        if self._show_bubble(text):
+            return
+        activity = self._current_activity()
+        if activity is not None:
+            try:
+                Toast.makeText(activity, text, Toast.LENGTH_SHORT).show()
+                return
+            except Exception:
+                pass
+        log(f"[{__id__}] toast (lost): {text}")
 
     def _on_avatar_menu(self, context):
         """Пункт меню сообщения: сделать присланную картинку аватаром Луз1ка."""
@@ -6725,7 +6742,7 @@ class Luz1kPetPlugin(BasePlugin):
             "ai_key": cfg.get("ai2_key") or "",
             "ai_url": cfg.get("ai2_url"),
             "ai_model": cfg.get("ai2_model"),
-            "ai_provider": 1,
+            "ai_provider": int(cfg.get("ai2_provider", 1) or 1),
             "ai_persona": cfg.get("ai_persona"),
         }
 
@@ -7022,7 +7039,9 @@ class Luz1kPetPlugin(BasePlugin):
         try:
             data = self._http_json(url, headers, body)
         except AiHttpError as e:
-            if e.code == 400 and "thinking" in e.body.lower():
+            if e.code == 400 and e.body:
+                # thinkingConfig не поддерживается этой моделью/версией API —
+                # убираем и пробуем ещё раз. Любой 400, иначе поднимаем как есть.
                 body["generationConfig"].pop("thinkingConfig", None)
                 data = self._http_json(url, headers, body)
             else:
@@ -7218,6 +7237,9 @@ class Luz1kPetPlugin(BasePlugin):
             pass
         self._chat_append("Ты: " + text)
         self._mem("talk", bond=0.15)
+        # Генерация реплики: инкрементируем счётчик, чтобы старые ответы
+        # (после закрытия/открытия чата) не прилетели в уже другой диалог.
+        self._chat_gen += 1
         if self._chat_ai_reply(text):
             self._chat_typing = True
             self._chat_append(self._pet_name() + ": …")
@@ -7339,7 +7361,7 @@ class Luz1kPetPlugin(BasePlugin):
 
     def _show_bubble(self, text):
         if self._bubble is None:
-            return
+            return False
         now = time.monotonic()
         try:
             bg = GradientDrawable()
@@ -7360,8 +7382,10 @@ class Luz1kPetPlugin(BasePlugin):
             self._bubble_visible = True
             self._bubble_fade_in = True
             self._bubble_until = now + 2.0 + len(text) * 0.05
+            return True
         except Exception as e:
             log(f"[{__id__}] bubble error: {e}")
+            return False
 
     def _hide_bubble(self):
         if self._bubble is None or not self._bubble_visible:

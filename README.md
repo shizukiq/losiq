@@ -66,9 +66,11 @@ storage, wipe from settings.
 
 ## ai (optional)
 
-google gemini or any openai-compatible endpoint (openrouter, groq, local). backup
-provider supported. message text leaves the phone only with the
-«видит текст сообщений» switch on; ai off means zero network requests.
+google gemini or any openai-compatible endpoint (openrouter, groq, local).
+backup provider supported — its type (gemini / openai-compatible) is chosen
+separately in settings, so a gemini key can be pasted into the backup slot.
+message text leaves the phone only with the «видит текст сообщений» switch on;
+ai off means zero network requests.
 
 ## temper
 
