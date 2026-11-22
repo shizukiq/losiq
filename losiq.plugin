@@ -61,7 +61,7 @@ __description__ = (
     "Реплики может генерировать нейросеть (Gemini или любой OpenAI-совместимый API)."
 )
 __author__ = "@shizukiqx"
-__version__ = "2.9"
+__version__ = "3.0"
 __app_version__ = ">=12.10.6"
 __sdk_version__ = ">=1.4.5.7"
 __category__ = ["fun", "integrations"]
@@ -1978,9 +1978,54 @@ SITUATIONS["eat_msg"] = (
     "скажи что-то смешное, злобное или тупое от себя. Ты в характере: дерзкий, немного неадекватный."
 )
 
-AI_PROVIDERS = ["Google Gemini (бесплатно)", "OpenAI-совместимый"]
+AI_PRESETS = [
+    {
+        "name": "Google Gemini (бесплатно)",
+        "type": "gemini",
+        "url": "https://generativelanguage.googleapis.com/v1beta",
+        "default_model": "gemini-2.5-flash",
+    },
+    {
+        "name": "Groq (бесплатно, быстрый)",
+        "type": "openai",
+        "url": "https://api.groq.com/openai/v1",
+        "default_model": "llama-3.3-70b-versatile",
+    },
+    {
+        "name": "OpenRouter (есть :free модели)",
+        "type": "openai",
+        "url": "https://openrouter.ai/api/v1",
+        "default_model": "meta-llama/llama-3.3-70b-instruct:free",
+    },
+    {
+        "name": "Cerebras (бесплатно, сверхбыстрый)",
+        "type": "openai",
+        "url": "https://api.cerebras.ai/v1",
+        "default_model": "llama-3.3-70b",
+    },
+    {
+        "name": "Mistral AI (бесплатный тир)",
+        "type": "openai",
+        "url": "https://api.mistral.ai/v1",
+        "default_model": "mistral-small-latest",
+    },
+    {
+        "name": "GitHub Models (бесплатно по токену GH)",
+        "type": "openai",
+        "url": "https://models.inference.ai.azure.com",
+        "default_model": "gpt-4o-mini",
+    },
+    {
+        "name": "Свой OpenAI-совместимый (Ollama / Local)",
+        "type": "openai",
+        "url": "https://api.openai.com/v1",
+        "default_model": "gpt-4o-mini",
+    },
+]
+AI_PROVIDER_NAMES = [p["name"] for p in AI_PRESETS]
+AI_PROVIDERS = AI_PROVIDER_NAMES
 AI_GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta"
-AI_GEMINI_MODEL = "gemini-3.5-flash-lite"
+AI_GEMINI_MODEL = "gemini-2.5-flash"
 AI_OPENAI_URL = "https://api.openai.com/v1"
 AI_OPENAI_MODEL = "gpt-4o-mini"
 AI_CHAT_ITEMS = ["Часто", "Нормально", "Редко", "Никогда"]
@@ -3140,6 +3185,9 @@ class Luz1kPetPlugin(BasePlugin):
         self._ai_err_next = 0.0
         self._say_gen = 0
         self._ai_history = []
+        self._fetched_models = [[], []]
+        self._fetching_models = [False, False]
+        self._auto_route_idx = 0
 
         self._brain = None
         self._brain_save_r = None
@@ -3265,20 +3313,31 @@ class Luz1kPetPlugin(BasePlugin):
                 brain_text = "Что Луз1к помнит\n" + brain.describe(self._user_name(), self._cfg.get("brain_about"))
             except Exception as e:
                 log(f"[{__id__}] brain describe error: {e}")
+
         skin_items = [SKIN_BASE] + [self._avatar_label(p) for p in self._avatar_files()]
+        models_slot0 = ["По умолчанию / своя вручную"] + list(self._fetched_models[0])
+        models_slot1 = ["По умолчанию / своя вручную"] + list(self._fetched_models[1])
+
         return [
-            Header(text="ЛУЗ1К"),
+            Header(text="Основное и внешний вид"),
             Switch(
                 key="show",
                 text="Показывать Луз1ка",
                 default=True,
-                subtext="Также переключается пунктом в боковом меню",
+                subtext="Переключается также пунктом «ЛУЗ1К» в боковом меню Telegram",
                 icon="msg_emoji_cat",
                 on_change=lambda v: self._on_cfg_change("show", v),
             ),
+            Text(
+                text="Позвать в центр экрана",
+                subtext="Вернёт питомца на видное место, если он потерялся или спрятался",
+                icon="msg_retry",
+                accent=True,
+                on_click=lambda _view=None: run_on_ui_thread(self._recenter),
+            ),
             Selector(
                 key="size",
-                text="Размер",
+                text="Размер питомца",
                 default=1,
                 items=SIZE_ITEMS,
                 icon="msg_photo_settings",
@@ -3294,15 +3353,22 @@ class Luz1kPetPlugin(BasePlugin):
             ),
             Selector(
                 key="skin",
-                text="Внешний вид",
+                text="Моделька / скин",
                 default=0,
                 items=skin_items,
                 icon="msg_photo_settings",
                 on_change=lambda v: self._on_skin_change(int(v)),
             ),
+            Text(
+                text="Загрузить скин из галереи",
+                subtext="Выбрать фото, обрезать рамкой и сразу поставить моделькой",
+                icon="msg_photo_settings",
+                accent=True,
+                on_click=self._on_gallery_click,
+            ),
             Input(
                 key="avatar_path",
-                text="Своя картинка (путь, необязательно)",
+                text="Своя картинка (путь к файлу)",
                 default="",
                 subtext=AVATAR_HINT,
                 icon="msg_photo_settings",
@@ -3310,28 +3376,22 @@ class Luz1kPetPlugin(BasePlugin):
             ),
             Input(
                 key="avatar_dir",
-                text="Папка с аватарами (необязательно)",
+                text="Папка со скинами (необязательно)",
                 default="",
-                subtext="Пусто — папка данных плагина. Иначе укажи путь к папке с файлами luz1k_avatar*",
+                subtext="Пусто — стандартная папка плагина. Иначе укажи путь к папке с luz1k_avatar*",
                 icon="msg_link",
                 on_change=lambda v: self._on_cfg_change("avatar_dir", str(v or "").strip()),
             ),
             Text(
-                text="Папка аватаров: " + (self._avatar_dir() or "недоступна"),
-                subtext=f"Найдено картинок: {len(self._avatar_files())}",
+                text="Папка скинов: " + (self._avatar_dir() or "недоступна"),
+                subtext=f"Найдено моделек: {len(self._avatar_files())}",
                 icon="msg_info",
             ),
-            Text(
-                text="Загрузить из галереи",
-                subtext="Выбрать картинку, обрезать в окошке и сразу поставить моделькой",
-                icon="msg_photo_settings",
-                accent=True,
-                on_click=self._on_gallery_click,
-            ),
-            Header(text="Поведение"),
+
+            Header(text="Физика и поведение"),
             Switch(
                 key="gravity",
-                text="Гравитация",
+                text="Гравитация и физика",
                 default=False,
                 subtext="Падает вниз, стоит на пузырях сообщений и поле ввода, съезжает при наклоне",
                 icon="msg_download",
@@ -3339,23 +3399,23 @@ class Luz1kPetPlugin(BasePlugin):
             ),
             Switch(
                 key="wander",
-                text="Гуляет сам",
+                text="Гуляет самостоятельно",
                 default=True,
-                subtext="Ходит, прыгает, машет, а от скуки прячется за край экрана",
+                subtext="Ходит по экрану, подпрыгивает, машет рукой и прячется за край",
                 icon="msg_location",
                 on_change=lambda v: self._on_cfg_change("wander", v),
             ),
             Switch(
                 key="phrases",
-                text="Разговаривает",
+                text="Разговаривает в облачке",
                 default=True,
-                subtext="Иногда показывает реплики в облачке",
+                subtext="Показывает мысли и реакции над головой",
                 icon="msg_discussion",
                 on_change=lambda v: self._on_cfg_change("phrases", v),
             ),
             Selector(
                 key="sleep",
-                text="Засыпает (висилица)",
+                text="Засыпает от скуки (висилица)",
                 default=1,
                 items=SLEEP_ITEMS,
                 icon="msg_mute",
@@ -3363,195 +3423,201 @@ class Luz1kPetPlugin(BasePlugin):
             ),
             Switch(
                 key="haptics",
-                text="Вибрация",
+                text="Тактильный отклик (вибрация)",
                 default=True,
                 icon="msg_sticker",
                 on_change=lambda v: self._on_cfg_change("haptics", v),
             ),
             Switch(
                 key="shake",
-                text="Чувствует тряску",
+                text="Реакция на тряску телефона",
                 default=True,
-                subtext="Потряси телефон — Луз1к разлетится по экрану. Использует акселерометр",
+                subtext="Потряси телефон — Луз1к разлетится по экрану (акселерометр)",
                 icon="msg_photo_rotate",
                 on_change=lambda v: self._on_cfg_change("shake", v),
             ),
             Switch(
                 key="tg_events",
-                text="Реагирует на Telegram",
+                text="Реакция на события Telegram",
                 default=True,
-                subtext="Новые сообщения, твои ответы, «привет», «люблю», «ахаха» и открытые чаты",
+                subtext="Входящие, твои сообщения, «привет», «люблю», «ахаха» и смена чатов",
                 icon="msg_notifications",
                 on_change=lambda v: self._on_cfg_change("tg_events", v),
             ),
             Switch(
                 key="dance",
-                text="Танцует под музыку",
+                text="Танцует под музыку и голосовые",
                 default=True,
-                subtext="Пока играет трек или голосовое",
+                subtext="Двигается в такт, пока играет трек или аудиосообщение",
                 icon="msg_voice_headphones",
                 on_change=lambda v: self._on_cfg_change("dance", v),
             ),
-            Header(text="Характер"),
+
+            Header(text="Характер и хаос"),
             Selector(
                 key="temper",
-                text="Характер",
+                text="Уровень характера",
                 default=2,
                 items=TEMPER_ITEMS,
                 icon="msg_emoji_love",
                 on_change=lambda v: self._on_cfg_change("temper", int(v)),
             ),
             Text(
-                text="Что делает характер",
-                subtext="Святой — не трогает интерфейс. Добрый — милеет и любит гладёжку. Дерзкий — изредка двигает кнопки. Злой — часто ломает интерфейс. ПСИХ — ломает постоянно, сам открывает чаты и пишет туда",
+                text="Справка по характерам",
+                subtext="Святой — не трогает UI. Добрый — милый. Дерзкий — изредка двигает кнопки. Злой — часто ломает UI. ПСИХ — хаос, сам открывает чаты и пишет туда",
                 icon="msg_info",
             ),
             Switch(
                 key="chaos",
                 text="Ломает интерфейс",
                 default=True,
-                subtext="При высоком характере двигает элементы, дёргает настройки. Можно выключить отдельно",
+                subtext="Поедает, крутит и швыряет кнопки Telegram на высоком уровне характера",
                 icon="msg_blocked",
                 on_change=lambda v: self._on_cfg_change("chaos", v),
             ),
             Switch(
                 key="chat_write",
-                text="Сам пишет в чаты",
+                text="Сам пишет в чаты (только ПСИХ)",
                 default=True,
-                subtext="Только ПСИХ: бродит по чатам и отправляет реплики от твоего имени. Ниже ПСИХа — только бубнит себе",
+                subtext="На режиме ПСИХ сам отправляет реплики в открытый чат от твоего имени",
                 icon="msg_reactions",
                 on_change=lambda v: self._on_cfg_change("chat_write", v),
             ),
             Switch(
                 key="sensitive_lines",
-                text="Я осознаю: будут упоминания самоповреждения",
+                text="Мрачные / тяжёлые реплики и сцены",
                 default=False,
-                subtext="Включает подготовленные тяжёлые реплики о смерти и самоповреждении. Только пузырьки и локальные сцены — в чаты не отправляются.",
+                subtext="Включает подготовленные депрессивные фразы. Только локально в облачке — в чаты не уходят",
                 icon="msg_secret",
                 on_change=lambda v: self._on_cfg_change("sensitive_lines", v),
             ),
-            Header(text="Вдохновение"),
-            Text(
-                text="Alex G · Автостопом по фазе сна · Cupsize · wifiskeleton",
-                subtext="Часть коротких фрагментов предоставлена владельцем плагина; остальные реплики оригинальные.",
-                icon="msg_voice_headphones",
-            ),
-            Header(text="Тест анимаций"),
             Selector(
                 key="test_anim",
-                text="Проиграть анимацию",
+                text="Тест анимаций и сцен",
                 default=0,
                 items=ANIM_TEST_ITEMS,
                 icon="msg_photo_settings",
                 on_change=lambda v: run_on_ui_thread(lambda: self._test_anim(int(v))),
             ),
-            Header(text="Мозг"),
-            Switch(
-                key="brain_enabled",
-                text="Помнит тебя и свои действия",
-                default=True,
-                subtext="Копит память: что ты с ним делал, какие чаты открываешь, как к нему относишься. Хранится только на телефоне",
-                icon="msg_stats",
-                on_change=lambda v: self._on_cfg_change("brain_enabled", v),
-            ),
-            Input(
-                key="brain_name",
-                text="Как тебя зовут",
-                default="",
-                subtext="Пусто — возьмёт имя из аккаунта Telegram",
-                icon="msg_edit",
-                on_change=lambda v: self._on_cfg_change("brain_name", str(v or "").strip()),
-            ),
-            Input(
-                key="brain_about",
-                text="Расскажи о себе",
-                default="",
-                subtext="Например: учусь на программиста, люблю котов, ложусь поздно. Луз1к будет это учитывать",
-                icon="msg_edit",
-                on_change=lambda v: self._on_cfg_change("brain_about", str(v or "").strip()),
-            ),
-            Switch(
-                key="brain_learn",
-                text="ИИ сам запоминает факты",
-                default=True,
-                subtext="Нейросеть может записать в память новое о тебе. Видит она только то, что ей отправляют: текст сообщений — лишь при включённом «Видит текст сообщений»",
-                icon="msg_discussion",
-                on_change=lambda v: self._on_cfg_change("brain_learn", v),
-            ),
-            Switch(
-                key="brain_share",
-                text="Передавать память ИИ",
-                default=True,
-                subtext="Короткая выжимка памяти (имя, факты, привычки, события) уходит провайдеру ИИ вместе с запросом. Выключи — Луз1к будет помнить, но реплики пойдут без памяти",
-                icon="msg_secret",
-                on_change=lambda v: self._on_cfg_change("brain_share", v),
-            ),
-            Text(
-                text="Привязанность",
-                subtext=brain_bond,
-                icon="msg_reactions",
-            ),
-            Text(
-                text="Вместе",
-                subtext=brain_days,
-                icon="msg_stats",
-            ),
-            Text(
-                text="Запомнено фактов",
-                subtext=f"{brain_notes} шт.",
-                icon="msg_edit",
-            ),
-            Text(
-                text="Забыть всё",
-                subtext="Тапни дважды в течение 5 секунд",
-                icon="msg_delete",
-                on_click=lambda _view=None: run_on_ui_thread(self._brain_forget),
-            ),
-            Divider(text=brain_text),
-            Header(text="ИИ-реплики"),
+
+            Header(text="ИИ-генерация: Основной провайдер"),
             Switch(
                 key="ai_enabled",
-                text="Отвечает через ИИ",
+                text="Включить ИИ-мозг",
                 default=False,
-                subtext="Реплики генерирует нейросеть. Уходят тип ситуации, названия чатов и треков. Текст сообщений только если включить отдельный переключатель",
+                subtext="Реплики, эмоции и движения генерирует нейросеть вместо заготовок",
                 icon="msg_discussion",
                 on_change=lambda v: self._on_cfg_change("ai_enabled", v),
             ),
             Selector(
                 key="ai_provider",
-                text="Провайдер",
+                text="Провайдер (Пресет)",
                 default=0,
-                items=AI_PROVIDERS,
+                items=AI_PROVIDER_NAMES,
                 icon="msg_settings",
-                on_change=lambda v: self._on_cfg_change("ai_provider", int(v)),
+                on_change=lambda v: self._on_provider_select(0, int(v)),
             ),
             Input(
                 key="ai_key",
-                text="API-ключ",
+                text="API-ключ основного провайдера",
                 default="",
-                subtext="Для Gemini бесплатный ключ: aistudio.google.com/apikey. Для локального OpenAI-совместимого сервера ключ можно не указывать",
+                subtext="Ключ от выбранного сервиса (для локального сервера Ollama оставь пустым)",
                 icon="msg_secret",
                 on_change=lambda v: self._on_cfg_change("ai_key", str(v or "").strip()),
             ),
+            Text(
+                text="Авто-запрос списка моделей (GET /models)",
+                subtext="Скачать актуальные доступные модели с сервера по ключу выше",
+                icon="msg_download",
+                accent=True,
+                on_click=lambda _v=None: run_on_ui_thread(lambda: self._fetch_models_async(0)),
+            ),
+            Selector(
+                key="ai_fetched_idx",
+                text="Выбор из загруженных моделей",
+                default=0,
+                items=models_slot0,
+                icon="msg_stats",
+                on_change=lambda v: self._on_cfg_change("ai_fetched_idx", int(v)),
+            ),
             Input(
                 key="ai_model",
-                text="Модель",
+                text="Модель вручную (высший приоритет)",
                 default="",
-                subtext="Пусто — по умолчанию (gemini-3.5-flash-lite или gpt-4o-mini)",
-                icon="msg_stats",
+                subtext="Если заполнено — используется эта модель, иначе из списка выше или дефолт пресета",
+                icon="msg_edit",
                 on_change=lambda v: self._on_cfg_change("ai_model", str(v or "").strip()),
             ),
             Input(
                 key="ai_url",
-                text="Адрес API (только для OpenAI-совместимого)",
+                text="Свой Base URL (необязательно)",
                 default="",
-                subtext="Пусто — api.openai.com. Например https://openrouter.ai/api/v1",
+                subtext="Пусто — адрес подставится из пресета. Нужно только для кастомных прокси/серверов",
                 icon="msg_link",
                 on_change=lambda v: self._on_cfg_change("ai_url", str(v or "").strip()),
             ),
+
+            Header(text="Авто-роутинг и резервный провайдер"),
+            Switch(
+                key="ai_autoroute",
+                text="Авто-роутинг (балансировка + фоллбэк)",
+                default=True,
+                subtext="Чередует основной и резервный API для обхода RPM-лимитов и мгновенно переключает при ошибках/429",
+                icon="msg_retry",
+                on_change=lambda v: self._on_cfg_change("ai_autoroute", v),
+            ),
+            Selector(
+                key="ai2_provider",
+                text="Резервный провайдер (Пресет)",
+                default=1,
+                items=AI_PROVIDER_NAMES,
+                icon="msg_settings",
+                on_change=lambda v: self._on_provider_select(1, int(v)),
+            ),
+            Input(
+                key="ai2_key",
+                text="API-ключ резервного провайдера",
+                default="",
+                subtext="Второй бесплатный ключ (например Groq + Gemini или OpenRouter) для страховки",
+                icon="msg_secret",
+                on_change=lambda v: self._on_cfg_change("ai2_key", str(v or "").strip()),
+            ),
+            Text(
+                text="Авто-запрос моделей резервного API",
+                subtext="Получить список моделей для второго слота через GET /models",
+                icon="msg_download",
+                accent=True,
+                on_click=lambda _v=None: run_on_ui_thread(lambda: self._fetch_models_async(1)),
+            ),
+            Selector(
+                key="ai2_fetched_idx",
+                text="Выбор модели резерва из списка",
+                default=0,
+                items=models_slot1,
+                icon="msg_stats",
+                on_change=lambda v: self._on_cfg_change("ai2_fetched_idx", int(v)),
+            ),
+            Input(
+                key="ai2_model",
+                text="Модель резерва вручную",
+                default="",
+                subtext="Пусто — модель из списка выше или дефолт резервного пресета",
+                icon="msg_edit",
+                on_change=lambda v: self._on_cfg_change("ai2_model", str(v or "").strip()),
+            ),
+            Input(
+                key="ai2_url",
+                text="Свой Base URL резерва (необязательно)",
+                default="",
+                subtext="Пусто — адрес из резервного пресета",
+                icon="msg_link",
+                on_change=lambda v: self._on_cfg_change("ai2_url", str(v or "").strip()),
+            ),
+
+            Header(text="Настройки ИИ-поведения и проверка"),
             Selector(
                 key="ai_chat",
-                text="Болтовня от скуки",
+                text="Частота болтовни от скуки",
                 default=1,
                 items=AI_CHAT_ITEMS,
                 icon="msg_emoji_cat",
@@ -3559,9 +3625,9 @@ class Luz1kPetPlugin(BasePlugin):
             ),
             Switch(
                 key="ai_moods",
-                text="ИИ выбирает анимации",
+                text="ИИ управляет эмоциями",
                 default=True,
-                subtext="Эмоция, прыжок, сердечки, ноты подбираются под ситуацию",
+                subtext="Подбирает анимацию лица, сердечки, прыжки и ноты под смысл ситуации",
                 icon="msg_emoji_cat",
                 on_change=lambda v: self._on_cfg_change("ai_moods", v),
             ),
@@ -3569,92 +3635,107 @@ class Luz1kPetPlugin(BasePlugin):
                 key="ai_move",
                 text="ИИ управляет движением",
                 default=True,
-                subtext="Нейросеть сама решает, куда пойти: к краю, в центр, спрятаться, прыгнуть или повиснуть на верёвке",
+                subtext="Сам решает, куда пойти, спрятаться или лечь спать",
                 icon="msg_location",
                 on_change=lambda v: self._on_cfg_change("ai_move", v),
             ),
             Switch(
                 key="ai_text",
-                text="Видит текст сообщений",
+                text="Передавать ИИ текст сообщений",
                 default=False,
-                subtext="Луз1к комментирует то, что ты пишешь и получаешь. Текст уходит провайдеру ИИ, включай осознанно",
+                subtext="Позволяет комментировать суть переписки (текст отправляется выбранному ИИ-провайдеру)",
                 icon="msg_secret",
                 on_change=lambda v: self._on_cfg_change("ai_text", v),
             ),
             Input(
                 key="ai_persona",
-                text="Доп. характер",
+                text="Дополнительный промпт характера",
                 default="",
-                subtext="Необязательно: например «ты грубоватый пират»",
+                subtext="Необязательно: например «отвечай как уставший киберпанк-хакер»",
                 icon="msg_edit",
                 on_change=lambda v: self._on_cfg_change("ai_persona", str(v or "").strip()),
             ),
-            Header(text="Резервный ИИ"),
-            Input(
-                key="ai2_url",
-                text="Адрес резервного API",
-                default="",
-                subtext="OpenAI-совместимый. Включается, когда основной упёрся в лимит или не отвечает. Например https://api.groq.com/openai/v1 или свой сервер http://192.168.1.5:11434/v1",
-                icon="msg_link",
-                on_change=lambda v: self._on_cfg_change("ai2_url", str(v or "").strip()),
-            ),
-            Input(
-                key="ai2_key",
-                text="Ключ резервного API",
-                default="",
-                subtext="Для своего локального сервера можно оставить пустым",
-                icon="msg_secret",
-                on_change=lambda v: self._on_cfg_change("ai2_key", str(v or "").strip()),
-            ),
-            Input(
-                key="ai2_model",
-                text="Модель резервного ИИ",
-                default="",
-                subtext="Название модели у этого провайдера, например llama-3.3-70b-versatile",
-                icon="msg_stats",
-                on_change=lambda v: self._on_cfg_change("ai2_model", str(v or "").strip()),
-            ),
-            Selector(
-                key="ai2_provider",
-                text="Тип резервного API",
-                default=1,
-                items=AI_PROVIDERS,
-                icon="msg_settings",
-                on_change=lambda v: self._on_cfg_change("ai2_provider", int(v)),
-            ),
-            Header(text="Сбои и проверка"),
             Switch(
                 key="ai_fallback",
-                text="Запасные фразы при сбое",
+                text="Запасные фразы при полном отказе сети",
                 default=True,
-                subtext="Если ИИ недоступен или упёрся в лимит, Луз1к скажет заготовленную фразу",
+                subtext="Если все ИИ-провайдеры недоступны, скажет заготовленную фразу из словаря",
                 icon="msg_reset",
                 on_change=lambda v: self._on_cfg_change("ai_fallback", v),
             ),
             Text(
-                text="Проверить ИИ",
+                text="Проверить работу ИИ сейчас",
+                subtext="Отправит тестовый запрос с учётом активных провайдеров и авто-роутинга",
                 icon="msg_retry",
                 accent=True,
                 on_click=lambda _view=None: run_on_ui_thread(self._ai_test),
             ),
-            Divider(),
-            Text(
-                text="Позвать в центр экрана",
-                icon="msg_retry",
-                accent=True,
-                on_click=lambda _view=None: run_on_ui_thread(self._recenter),
+
+            Header(text="Долговременная память (Мозг)"),
+            Switch(
+                key="brain_enabled",
+                text="Запоминать события и привычки",
+                default=True,
+                subtext="Копит историю взаимодействий локально на телефоне",
+                icon="msg_stats",
+                on_change=lambda v: self._on_cfg_change("brain_enabled", v),
+            ),
+            Input(
+                key="brain_name",
+                text="Твоё имя для питомца",
+                default="",
+                subtext="Пусто — возьмёт твоё имя из профиля Telegram",
+                icon="msg_edit",
+                on_change=lambda v: self._on_cfg_change("brain_name", str(v or "").strip()),
+            ),
+            Input(
+                key="brain_about",
+                text="Факты о себе",
+                default="",
+                subtext="Например: программист, люблю ночную музыку и кофе",
+                icon="msg_edit",
+                on_change=lambda v: self._on_cfg_change("brain_about", str(v or "").strip()),
+            ),
+            Switch(
+                key="brain_learn",
+                text="ИИ сам извлекает новые факты",
+                default=True,
+                subtext="Автоматически пополняет заметки о тебе из контекста",
+                icon="msg_discussion",
+                on_change=lambda v: self._on_cfg_change("brain_learn", v),
+            ),
+            Switch(
+                key="brain_share",
+                text="Передавать выжимку памяти в ИИ",
+                default=True,
+                subtext="Добавляет краткий контекст памяти в системный запрос к нейросети",
+                icon="msg_secret",
+                on_change=lambda v: self._on_cfg_change("brain_share", v),
             ),
             Text(
-                text="Погладили",
-                subtext=f"{pets} раз",
+                text=f"Статус: {brain_bond} · Вместе: {brain_days}",
+                subtext=f"Запомнено фактов: {brain_notes} шт. · Погладили: {pets} раз",
                 icon="msg_reactions",
             ),
+            Text(
+                text="Сбросить всю память (Забыть всё)",
+                subtext="Нажми дважды в течение 5 секунд для подтверждения",
+                icon="msg_delete",
+                on_click=lambda _view=None: run_on_ui_thread(self._brain_forget),
+            ),
+            Divider(text=brain_text),
+
+            Header(text="Управление жестами и авторы"),
+            Text(
+                text="Вдохновение: Alex G · Автостопом по фазе сна · Cupsize · wifiskeleton",
+                subtext="Часть коротких фрагментов предоставлена автором плагина; остальные реплики оригинальные.",
+                icon="msg_voice_headphones",
+            ),
             Divider(
-                text="Тап — ткнуть, двойной тап — прыжок, удержание — погладить "
-                     "(води пальцем туда-сюда), перетаскивание — перенести, резкий бросок — полёт. "
-                     "Без дела курит под, пьёт Жигулёвское, иногда блеванёт пиксельной кровью — лужу можно убрать тапом. "
-                     "Потряси телефон — разлетится по экрану. В чате перетащи его на поле ввода — "
-                     "выстрелит в себя из дробовика и соберётся заново."
+                text="• 1 тап — ткнуть | 2 тапа — прыжок | 5 тапов — открыть окно личного чата с Луз1ком\n"
+                     "• Удержание и поглаживание — сердечки и рост привязанности\n"
+                     "• Перетаскивание и бросок — полёт, отскоки и вис на статус-баре\n"
+                     "• В чате перетащи на поле ввода — сценка с дробовиком и респавн"
             ),
         ]
 
@@ -3684,6 +3765,8 @@ class Luz1kPetPlugin(BasePlugin):
             "ai_provider": int(self.get_setting("ai_provider", 0) or 0),
             "ai_url": str(self.get_setting("ai_url", "") or "").strip(),
             "ai_model": str(self.get_setting("ai_model", "") or "").strip(),
+            "ai_fetched_idx": int(self.get_setting("ai_fetched_idx", 0) or 0),
+            "ai_autoroute": bool(self.get_setting("ai_autoroute", True)),
             "ai_chat": int(self.get_setting("ai_chat", 1) or 0),
             "ai_moods": bool(self.get_setting("ai_moods", True)),
             "ai_move": bool(self.get_setting("ai_move", True)),
@@ -3691,6 +3774,7 @@ class Luz1kPetPlugin(BasePlugin):
             "ai2_key": str(self.get_setting("ai2_key", "") or "").strip(),
             "ai2_model": str(self.get_setting("ai2_model", "") or "").strip(),
             "ai2_provider": int(self.get_setting("ai2_provider", 1) or 1),
+            "ai2_fetched_idx": int(self.get_setting("ai2_fetched_idx", 0) or 0),
             "ai_text": bool(self.get_setting("ai_text", False)),
             "ai_persona": str(self.get_setting("ai_persona", "") or "").strip(),
             "ai_fallback": bool(self.get_setting("ai_fallback", True)),
@@ -3737,6 +3821,10 @@ class Luz1kPetPlugin(BasePlugin):
 
     def _on_cfg_change(self, key, value):
         self._cfg[key] = value
+        if key in ("ai_key", "ai_url", "ai_model", "ai_fetched_idx"):
+            self._ai_bo[0] = 0.0
+        elif key in ("ai2_key", "ai2_url", "ai2_model", "ai2_fetched_idx"):
+            self._ai_bo[1] = 0.0
         if key == "show":
             run_on_ui_thread(lambda: self._apply_show(bool(value)))
         elif key in ("size", "color"):
@@ -6811,45 +6899,166 @@ class Luz1kPetPlugin(BasePlugin):
             log(f"[{__id__}] brain static error: {e}")
         return None
 
-    def _ai_ready(self):
+    def _on_provider_select(self, slot, idx):
+        key = "ai_provider" if slot == 0 else "ai2_provider"
+        fetched_key = "ai_fetched_idx" if slot == 0 else "ai2_fetched_idx"
+        self._cfg[key] = idx
+        self._ai_bo[slot] = 0.0
+        self._fetched_models[slot] = []
+        self._cfg[fetched_key] = 0
+        try:
+            self.set_setting(fetched_key, 0, reload_settings=True)
+        except Exception:
+            try:
+                self.set_setting(fetched_key, 0)
+            except Exception:
+                pass
+
+    def _resolve_provider_cfg(self, slot=0):
         cfg = self._cfg
-        primary_ready = bool(cfg.get("ai_key")) or bool(
-            int(cfg.get("ai_provider", 0)) == 1 and cfg.get("ai_url")
-        )
-        return bool(cfg.get("ai_enabled") and (primary_ready or cfg.get("ai2_url")))
+        prefix = "ai" if slot == 0 else "ai2"
+        default_p = 0 if slot == 0 else 1
+        p_idx = clamp(int(cfg.get(f"{prefix}_provider", default_p) or 0), 0, len(AI_PRESETS) - 1)
+        preset = AI_PRESETS[p_idx]
+
+        custom_url = str(cfg.get(f"{prefix}_url") or "").strip().rstrip("/")
+        url = custom_url if custom_url else preset["url"]
+        if not url.lower().startswith(("http://", "https://")):
+            url = "https://" + url
+
+        key = str(cfg.get(f"{prefix}_key") or "").strip()
+        custom_model = str(cfg.get(f"{prefix}_model") or "").strip()
+
+        if not custom_model and self._fetched_models[slot]:
+            sel_idx = int(cfg.get(f"{prefix}_fetched_idx", 0) or 0)
+            if 0 < sel_idx <= len(self._fetched_models[slot]):
+                custom_model = self._fetched_models[slot][sel_idx - 1]
+
+        model = custom_model if custom_model else preset["default_model"]
+        return {
+            "type": preset["type"],
+            "url": url,
+            "key": key,
+            "model": model,
+            "ai_persona": cfg.get("ai_persona"),
+            "ai_key": key,
+            "ai_url": url,
+            "ai_model": model,
+            "ai_provider": 1 if preset["type"] == "openai" else 0,
+        }
+
+    def _fetch_models_async(self, slot=0):
+        if self._fetching_models[slot]:
+            self._toast("Уже запрашиваю список моделей…")
+            return
+        p_cfg = self._resolve_provider_cfg(slot)
+        if not p_cfg["key"] and not p_cfg["url"].lower().startswith("http://"):
+            self._toast("Сначала вставь API-ключ для этого слота")
+            return
+
+        self._fetching_models[slot] = True
+        self._toast("Запрашиваю модели (GET /models)…")
+
+        def work():
+            models = []
+            err = None
+            try:
+                if p_cfg["type"] == "gemini":
+                    req_url = f"{p_cfg['url']}/models"
+                    req = urllib.request.Request(
+                        req_url,
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (luz1k_pet plugin)",
+                            "x-goog-api-key": p_cfg["key"],
+                        },
+                    )
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                    for m in data.get("models", []):
+                        methods = m.get("supportedGenerationMethods", [])
+                        if "generateContent" in methods:
+                            name = str(m.get("name", "")).replace("models/", "")
+                            if name:
+                                models.append(name)
+                else:
+                    base = p_cfg["url"]
+                    if base.endswith("/chat/completions"):
+                        base = base[: -len("/chat/completions")]
+                    req_url = f"{base}/models"
+                    headers = {"User-Agent": "Mozilla/5.0 (luz1k_pet plugin)"}
+                    if p_cfg["key"]:
+                        headers["Authorization"] = f"Bearer {p_cfg['key']}"
+                    req = urllib.request.Request(req_url, headers=headers)
+                    with urllib.request.urlopen(req, timeout=12) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                    items = data.get("data", []) if isinstance(data, dict) else data
+                    for m in items:
+                        mid = m.get("id") if isinstance(m, dict) else str(m)
+                        if mid:
+                            models.append(str(mid))
+                models = sorted(set(models))
+            except urllib.error.HTTPError as e:
+                err = f"HTTP {e.code}"
+                log(f"[{__id__}] fetch models[{slot}] http {e.code}")
+            except Exception as e:
+                err = str(e)
+                log(f"[{__id__}] fetch models[{slot}] error: {e}")
+            finally:
+                self._fetching_models[slot] = False
+
+            def done():
+                if self._unloaded:
+                    return
+                if err:
+                    self._toast(f"Ошибка запроса моделей: {err[:60]}")
+                    return
+                if not models:
+                    self._toast("Сервер вернул пустой список моделей")
+                    return
+                self._fetched_models[slot] = models
+                fetched_key = "ai_fetched_idx" if slot == 0 else "ai2_fetched_idx"
+                self._cfg[fetched_key] = 1
+                try:
+                    self.set_setting(fetched_key, 1, reload_settings=True)
+                except Exception:
+                    try:
+                        self.set_setting(fetched_key, 1)
+                    except Exception:
+                        pass
+                self._toast(f"Загружено моделей: {len(models)} ({models[0]})")
+
+            run_on_ui_thread(done)
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _ai_slot_ready(self, slot):
+        p = self._resolve_provider_cfg(slot)
+        if p["type"] == "openai" and p["url"].lower().startswith("http://"):
+            return True
+        return bool(p["key"])
+
+    def _ai_ready(self):
+        if not self._cfg.get("ai_enabled"):
+            return False
+        return self._ai_slot_ready(0) or self._ai_slot_ready(1)
 
     def _ai_primary_ready(self):
-        cfg = self._cfg
-        if int(cfg.get("ai_provider", 0)) == 1:
-            return bool(cfg.get("ai_key") or cfg.get("ai_url"))
-        return bool(cfg.get("ai_key"))
+        return self._ai_slot_ready(0)
 
     def _ai_providers(self, now):
-        cfg = self._cfg
-        result = []
-        if self._ai_primary_ready() and now >= self._ai_bo[0]:
-            result.append(0)
-        if cfg.get("ai2_url") and now >= self._ai_bo[1]:
-            result.append(1)
-        return result
+        slots = []
+        if self._ai_slot_ready(0) and now >= self._ai_bo[0]:
+            slots.append(0)
+        if self._ai_slot_ready(1) and now >= self._ai_bo[1]:
+            slots.append(1)
+
+        if len(slots) > 1 and self._cfg.get("ai_autoroute", True):
+            self._auto_route_idx = (self._auto_route_idx + 1) % len(slots)
+            slots = slots[self._auto_route_idx:] + slots[: self._auto_route_idx]
+        return slots
 
     def _ai_provider_cfg(self, index):
-        cfg = self._cfg
-        if index == 0:
-            return {
-                "ai_key": cfg.get("ai_key"),
-                "ai_url": cfg.get("ai_url"),
-                "ai_model": cfg.get("ai_model"),
-                "ai_provider": cfg.get("ai_provider", 0),
-                "ai_persona": cfg.get("ai_persona"),
-            }
-        return {
-            "ai_key": cfg.get("ai2_key") or "",
-            "ai_url": cfg.get("ai2_url"),
-            "ai_model": cfg.get("ai2_model"),
-            "ai_provider": int(cfg.get("ai2_provider", 1) or 1),
-            "ai_persona": cfg.get("ai_persona"),
-        }
+        return self._resolve_provider_cfg(index)
 
     def _say(self, category, force=False, name=None, ctx=None):
         if self._bubble is None or (not force and not self._cfg.get("phrases", True)):
@@ -6906,11 +7115,11 @@ class Luz1kPetPlugin(BasePlugin):
         self._ai_idle_next = 0.0
         self._ai_err_next = 0.0
         if not self._ai_ready():
-            self._toast("Включи ИИ и вставь API-ключ")
+            self._toast("Включи ИИ и укажи API-ключ провайдера")
             return
         if self._bubble is None:
             if not self._cfg.get("show", True):
-                self._toast("Луз1к скрыт — включи «Показать»")
+                self._toast("Луз1к скрыт — включи «Показывать Луз1ка»")
                 return
             self._start(greet=False)
         if self._bubble is None:
@@ -6938,15 +7147,17 @@ class Luz1kPetPlugin(BasePlugin):
                     now = time.monotonic()
                     if e.code == 429:
                         self._ai_bo[index] = now + AI_BACKOFF
-                        err = "ИИ: лимит запросов, подожду"
+                        err = "ИИ: лимит запросов, переключаюсь…"
                     elif e.code in (400, 401, 403, 404):
                         self._ai_bo[index] = now + AI_BACKOFF * 5
-                        err = AI_ERR_TEXT
+                        err = f"ИИ ({cfg.get('model')}): ошибка {e.code}, проверь ключ/модель"
                     elif e.code >= 500:
                         self._ai_bo[index] = now + 30.0
+                        err = f"ИИ: сервер временно недоступен ({e.code})"
                 except Exception as e:
                     log(f"[{__id__}] ai[{index}] error: {e}")
                     self._ai_bo[index] = time.monotonic() + 20.0
+                    err = "ИИ: ошибка соединения"
         finally:
             self._ai_busy = False
         if text or action:
@@ -7113,26 +7324,26 @@ class Luz1kPetPlugin(BasePlugin):
         system = self._ai_system("ai", AI_SYSTEM)
         if cfg.get("ai_persona"):
             system += " Дополнительно к характеру: " + str(cfg["ai_persona"])
-        if int(cfg.get("ai_provider") or 0) == 1:
+        if cfg.get("type") == "openai":
             raw = self._ai_call_openai(cfg, system, prompt)
         else:
             raw = self._ai_call_gemini(cfg, system, prompt)
         return self._parse_ai(raw)
 
     def _ai_call_gemini(self, cfg, system, prompt, json_mode=True):
-        model = str(cfg.get("ai_model") or AI_GEMINI_MODEL).strip()
+        model = str(cfg.get("model") or AI_GEMINI_MODEL).strip()
         if model.startswith("models/"):
             model = model[len("models/"):]
-        url = f"{AI_GEMINI_URL}/models/{model}:generateContent"
+        base = str(cfg.get("url") or AI_GEMINI_URL).rstrip("/")
+        url = f"{base}/models/{model}:generateContent"
         headers = {
             "Content-Type": "application/json",
-            "x-goog-api-key": str(cfg.get("ai_key", "") or ""),
+            "x-goog-api-key": str(cfg.get("key", "") or ""),
             "User-Agent": "Mozilla/5.0 (luz1k_pet plugin)",
         }
         config = {
             "maxOutputTokens": 300 if json_mode else 220,
             "temperature": 1.0,
-            "thinkingConfig": {"thinkingLevel": "minimal"},
         }
         if json_mode:
             config["responseMimeType"] = "application/json"
@@ -7141,21 +7352,12 @@ class Luz1kPetPlugin(BasePlugin):
             "contents": [{"role": "user", "parts": [{"text": prompt}]}],
             "generationConfig": config,
         }
-        try:
-            data = self._http_json(url, headers, body)
-        except AiHttpError as e:
-            if e.code == 400 and e.body:
-                # thinkingConfig не поддерживается этой моделью/версией API —
-                # убираем и пробуем ещё раз. Любой 400, иначе поднимаем как есть.
-                body["generationConfig"].pop("thinkingConfig", None)
-                data = self._http_json(url, headers, body)
-            else:
-                raise
+        data = self._http_json(url, headers, body)
         parts = data["candidates"][0]["content"]["parts"]
         return "".join(str(part.get("text", "")) for part in parts if not part.get("thought"))
 
     def _ai_call_openai(self, cfg, system, prompt, json_mode=True):
-        base = str(cfg.get("ai_url") or AI_OPENAI_URL).strip().rstrip("/")
+        base = str(cfg.get("url") or AI_OPENAI_URL).strip().rstrip("/")
         if not base.lower().startswith(("http://", "https://")):
             base = "https://" + base
         url = base if base.endswith("/chat/completions") else base + "/chat/completions"
@@ -7163,10 +7365,10 @@ class Luz1kPetPlugin(BasePlugin):
             "Content-Type": "application/json",
             "User-Agent": "Mozilla/5.0 (luz1k_pet plugin)",
         }
-        if cfg.get("ai_key"):
-            headers["Authorization"] = "Bearer " + str(cfg.get("ai_key") or "")
+        if cfg.get("key"):
+            headers["Authorization"] = "Bearer " + str(cfg.get("key") or "")
         body = {
-            "model": str(cfg.get("ai_model") or AI_OPENAI_MODEL),
+            "model": str(cfg.get("model") or AI_OPENAI_MODEL),
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
@@ -7639,8 +7841,18 @@ class Luz1kPetPlugin(BasePlugin):
                     reply = self._ai_chat_call(cfg, text, history)
                     if reply:
                         break
+                except AiHttpError as e:
+                    log(f"[{__id__}] chat ai[{index}] http {e.code}: {e.body[:200]}")
+                    now = time.monotonic()
+                    if e.code == 429:
+                        self._ai_bo[index] = now + AI_BACKOFF
+                    elif e.code in (400, 401, 403, 404):
+                        self._ai_bo[index] = now + AI_BACKOFF * 5
+                    elif e.code >= 500:
+                        self._ai_bo[index] = now + 30.0
                 except Exception as e:
                     log(f"[{__id__}] chat ai[{index}] error: {e}")
+                    self._ai_bo[index] = time.monotonic() + 20.0
 
             def finish(r=reply, t=text):
                 if gen != self._chat_gen:
@@ -7673,7 +7885,7 @@ class Luz1kPetPlugin(BasePlugin):
             parts.append("Предыдущие реплики диалога:\n" + history)
         parts.append("Новое сообщение пользователя: " + user_text)
         prompt = "\n\n".join(parts)
-        if int(cfg.get("ai_provider") or 0) == 1:
+        if cfg.get("type") == "openai":
             raw = self._ai_call_openai(cfg, system, prompt, json_mode=False)
         else:
             raw = self._ai_call_gemini(cfg, system, prompt, json_mode=False)
