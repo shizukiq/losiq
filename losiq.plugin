@@ -62,7 +62,7 @@ __description__ = (
     "Реплики может генерировать нейросеть (Gemini или любой OpenAI-совместимый API)."
 )
 __author__ = "@shizukiqx"
-__version__ = "3.1"
+__version__ = "3.2"
 __app_version__ = ">=12.10.6"
 __sdk_version__ = ">=1.4.5.7"
 __category__ = ["fun", "integrations"]
@@ -702,12 +702,131 @@ DEAD_AVATAR_PROPS = {
     "shot_gone": _cells_of(_shotgun_gone()),
 }
 
+# НЯШКА — четвёртая встроенная моделька (розово-чёрная гот-девочка).
+# Пропсы собраны под её анатомию (201x640): рот (9.0, 8.6), левое запястье
+# (6.3, 18.7), правая кисть (11.7, 18.6), правый висок (12.6, 6.4).
+_NYA_POD = [
+    (9, 8, "M"),                                    # мундштук у губ
+    (10, 9, "M"),                                   # изгиб ото рта
+    (11, 10, "M"), (11, 11, "M"),                   # корпус вниз к кисти
+    (12, 12, "M"),                                  # переход к баку
+    (11, 13, "M"), (12, 13, "M"),                   # верх бака в кисти
+    (11, 14, "M"), (12, 14, "W"),                   # окно: воздух над жидкостью
+    (11, 15, "M"), (12, 15, "U"),                   # окно: жидкость
+    (11, 16, "M"), (12, 16, "M"),                   # корпус в кисти
+    (11, 17, "M"), (12, 17, "M"),
+    (11, 18, "M"), (12, 18, "M"),
+    (11, 19, "K"), (12, 19, "K"),                   # днище в ладони
+]
+_NYA_POD_CLOUD = [
+    (14, 6), (15, 6), (14, 7), (16, 7), (15, 7),
+    (15, 8), (16, 8), (17, 8), (16, 9), (17, 10), (16, 10),
+]
+_NYA_BEER = [
+    (8, 8, "B"), (9, 8, "B"),                       # горлышко в губах
+    (7, 9, "B"), (8, 9, "B"),                       # наклон к кисти
+    (6, 10, "B"), (7, 10, "B"),                     # плечики
+    (5, 11, "K"), (6, 11, "U"), (7, 11, "K"),
+    (5, 12, "K"), (6, 12, "B"), (7, 12, "K"),
+    (5, 13, "K"), (6, 13, "D"), (7, 13, "K"),       # этикетка
+    (5, 14, "K"), (6, 14, "U"), (7, 14, "K"),
+    (5, 15, "K"), (6, 15, "B"), (7, 15, "K"),
+    (5, 16, "K"), (6, 16, "U"), (7, 16, "K"),
+    (5, 17, "K"), (6, 17, "K"), (7, 17, "K"),       # днище в кисти
+]
+_NYA_BEER_DONE = [
+    (6, 13, "B"), (7, 13, "B"),                     # бутылка опущена у кисти
+    (5, 14, "K"), (6, 14, "U"), (7, 14, "K"),
+    (5, 15, "K"), (6, 15, "B"), (7, 15, "K"),
+    (5, 16, "K"), (6, 16, "D"), (7, 16, "K"),       # этикетка
+    (5, 17, "K"), (6, 17, "U"), (7, 17, "K"),
+    (5, 18, "K"), (6, 18, "K"), (7, 18, "K"),       # днище
+    (9, 9, "P"),                                    # капля с губы
+]
+_NYA_VEIN_AIM = [
+    (1, 18, "D"), (2, 18, "D"),                     # рукоять лезвия
+    (3, 18, "M"), (4, 18, "M"), (5, 18, "M"),       # лезвие у запястья
+]
+_NYA_VEIN_CUT = [
+    (5, 18, "R"), (6, 18, "Q"), (7, 18, "R"),       # порез через запястье
+    (6, 19, "R"), (6, 20, "Q"),                     # первая струйка
+    (1, 17, "D"), (2, 17, "D"),                     # лезвие отводится
+    (3, 17, "M"), (4, 17, "M"),
+]
+_NYA_VEIN_DRIP = [
+    (5, 18, "R"), (6, 18, "Q"), (7, 18, "R"),       # порез
+    (6, 19, "R"), (6, 20, "Q"),                     # струя по кисти
+    (6, 21, "R"), (5, 21, "R"),
+    (5, 22, "R"), (4, 23, "R"), (6, 23, "Q"),       # капли срываются
+    (4, 24, "R"), (6, 25, "R"),
+    (3, 26, "R"), (4, 26, "Q"),
+    (2, 26, "R"), (3, 27, "R"), (1, 27, "R"),       # лужица у ботинка
+    (16, 26, "M"), (17, 27, "M"),                   # лезвие брошено у края
+]
+_NYA_SICK_A = [
+    (9, 9, "R"), (9, 10, "Q"),                      # подступило к горлу
+]
+_NYA_SICK_B = [
+    (9, 9, "R"), (9, 10, "R"), (9, 11, "Q"), (9, 12, "R"),
+    (8, 13, "R"), (10, 13, "R"), (9, 14, "R"),
+    (8, 15, "Q"), (10, 15, "R"), (9, 16, "R"),      # струя по свитеру
+]
+_NYA_SICK_C = [
+    (9, 9, "R"), (9, 10, "R"), (9, 11, "Q"), (9, 12, "R"),
+    (9, 13, "Q"), (9, 14, "R"), (10, 15, "R"),
+    (8, 16, "R"), (9, 17, "Q"), (10, 17, "R"),      # стекает и капает
+    (9, 19, "R"), (10, 20, "Q"),
+]
+_NYA_SHOT_AIM = [
+    (13, 6, "M"), (14, 6, "M"), (15, 6, "M"), (16, 6, "M"),   # ствол к виску
+    (16, 5, "D"), (17, 5, "D"),                               # приклад
+    (16, 7, "D"), (17, 7, "D"),
+]
+
+#спасибо катя ❤️
+def _nya_flash_cells():
+    # Компактная вспышка у правого виска Няшки.
+    cells = []
+    for y in range(4, 11):
+        for x in range(10, 17):
+            dx = x - 12.6
+            dy = (y - 6.4) * 1.2
+            d2 = dx * dx + dy * dy
+            if d2 <= 7:
+                if d2 < 2:
+                    cells.append((x, y, "K"))
+                elif (x + y) % 3 == 0:
+                    cells.append((x, y, "O"))
+                else:
+                    cells.append((x, y, "F"))
+    return cells
+    #спасибо катя ❤️
+
+NYA_AVATAR_PROPS = {
+    "pod_a": _NYA_POD,
+    "pod_b": _NYA_POD + [(11, 19, "O"), (12, 14, "U")],
+    "pod_c": _NYA_POD + [(11, 19, "O")] + [(x, y, "V") for x, y in _NYA_POD_CLOUD],
+    "beer_a": _NYA_BEER,
+    "beer_b": _NYA_BEER + [(9, 9, "E"), (9, 10, "E")],
+    "beer_c": _NYA_BEER_DONE,
+    "vein_a": _NYA_VEIN_AIM,
+    "vein_b": _NYA_VEIN_CUT,
+    "vein_c": _NYA_VEIN_DRIP,
+    "sick_a": _NYA_SICK_A,
+    "sick_b": _NYA_SICK_B,
+    "sick_c": _NYA_SICK_C,
+    "shot_aim": _NYA_SHOT_AIM,
+    "shot_flash": _nya_flash_cells(),
+    "shot_gone": _cells_of(_shotgun_gone()),
+}
+
 # Точки своей картинки для частиц: рот (пар, капли) и запястье (кровь)
 # как доля ширины/высоты вью. У каждого встроенного аватара свои.
 AVATAR_FX_POINTS = {
     "luz1k_avatar0_h4teboy.png": {"mouth": (0.45, 0.47), "wrist": (0.22, 0.79)},
     "luz1k_avatar2_dead.png": {"mouth": (0.5, 0.41), "wrist": (0.38, 0.62)},
     "luz1k_avatar1_luz1k.png": {"mouth": (0.49, 0.37), "wrist": (0.23, 0.59)},
+    "luz1k_avatar3_nyashka.png": {"mouth": (0.502, 0.307), "wrist": (0.352, 0.669)},
 }
 AVATAR_FX_DEFAULT = {"mouth": (0.6, 0.32), "wrist": (0.25, 0.55)}
 
@@ -715,6 +834,7 @@ AVATAR_PROP_SETS = {
     "luz1k_avatar0_h4teboy.png": H4TE_AVATAR_PROPS,
     "luz1k_avatar2_dead.png": DEAD_AVATAR_PROPS,
     "luz1k_avatar1_luz1k.png": LUZ1K_AVATAR_PROPS,
+    "luz1k_avatar3_nyashka.png": NYA_AVATAR_PROPS,
 }
 
 # Верёвка, за которую висит Луз1к во сне: рисуется ПОД картинкой.
@@ -739,13 +859,14 @@ CROP_MAX_SIDE = 640
 AVATAR_HINT = (
     "Свои аватары берутся из папки данных плагина: положи туда файлы вида "
     f"{AVATAR_PREFIX}1.png, {AVATAR_PREFIX}2.png — они появятся в списке «Внешний вид». "
-    "Встроенные Дединсайдка, H4TE BOY и ЛУЗ1К (скетч) уже там."
+    "Встроенные Дединсайдка, H4TE BOY, ЛУЗ1К (скетч) и Няшка уже там."
 )
 
-# Встроенные аватары (Дединсайдка, H4TE BOY, ЛУЗ1К) лежат в base64,
+# Встроенные аватары (Дединсайдка, H4TE BOY, ЛУЗ1К, Няшка) лежат в base64,
 # чтобы .plugin оставался одним файлом.
 BUILTIN_AVATAR_DIR = "luz1k_builtin"
 AVATAR_LOCK = threading.Lock()
+    #спасибо катя ❤️
 BUILTIN_AVATARS = (
     (
         "Дединсайдка",
@@ -762,10 +883,29 @@ BUILTIN_AVATARS = (
         "luz1k_avatar1_luz1k.png",
         base64.b64encode(zlib.decompress(base64.b64decode("eNrrDPBz5+WS4mJgYOD19HAJYmBgVADiAxzMQBFTSVcDICUd4BPiCqSdnJxERESqqqqA5P95u29qawMZv379OrXO6CBQmrMkyC+Y4T8UmDPNvsLAwCzs6eIYUnHr7V3LosMGAiwOtxbl/v1/tK+XhTV5o8WNyV1HLp5Z5vBxl9ZO7Z1Swbv3f//+5i8DEwuHgIJDAwMjjPGWL+Teh3VLSpusLV7+ZkSXZWQy2XKgS25/zH9/QVRxIGPBckbX5rPnXrDzYOgqkQrQv5HFyY5poBVPRvmEp1KumKYdbrTrdsnfUF6DIYWd8Vf+Rahn5d/wifc+YpF9yvT1H2PZl69YdD5r6v134FaBADYnZCXs1eQPcO2vT2XHsPZFwYLvSViCaAp3kXr6buE0TKu6Gb/qJZQ5msnwYDPsFvuFMOasWH1M7y3Y/3NFiumCa1+ZML3/SntB3Mmb6wJZMGSiZDR2beg6V5Yvg6lNl+/KrJutkdmYoTGPTyR2xVaxiIuPY29iiS6gmR+0zP/clcASBztbI3c+uNgqicUD6Yy55YcwfX2Cu9T5ICNmbH1tdEn/VoMlroq4N938jCURBM3AFJRl+cJ9bP+PLJ9u+S/APMPg6ernss4poQkAv1rplA=="))).decode("ascii"),
     ),
+    (
+        "Няшка",
+        "luz1k_avatar3_nyashka.png",
+        base64.b64encode(zlib.decompress(base64.b64decode("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"))).decode("ascii"),
+    ),
+    #спасибо катя ❤️
 )
-# v1 — H4TE BOY встал первым встроенным, v2 — ЛУЗ1К добавлен вторым.
-AVATAR_POOL_STEPS = ((1, 1, 1), (2, 2, 1))
-AVATAR_POOL_VERSION = 2
+# v1 — H4TE BOY встал первым встроенным, v2 — ЛУЗ1К добавлен вторым,
+# v3 — Няшка добавлена четвёртой в конец списка.
+AVATAR_POOL_STEPS = ((1, 1, 1), (2, 2, 1), (3, 4, 1))
+AVATAR_POOL_VERSION = 3
+
+# Регулярка с именами всех встроенных питомцев: чистит префикс «Няшка:»
+# из ответов ИИ и работает для будущих аватаров автоматически.
+def _builtin_names_pattern():
+    parts = []
+    for label, _name, _data in BUILTIN_AVATARS:
+        parts.append(r"\s*".join(re.escape(w) for w in label.split()))
+    parts.append("Луз1к")
+    parts.append("Пет")
+    return re.compile("^(?:" + "|".join(parts) + r")\s*:\s*", re.IGNORECASE)
+
+_BUILTIN_NAME_RE = _builtin_names_pattern()
 
 TEMPER_ITEMS = ["Святой", "Добрый", "Дерзкий", "Злой", "ПСИХ"]
 # 0..4: пауза между актами хаоса (сек, 0=никогда)
@@ -1662,9 +1802,304 @@ DEAD_PHRASES = {
     },
 }
 
+# Реплики Няшки: свой голос для встроенной модельки. Милая снаружи,
+# меланхоличная внутри: розово-чёрная половина, чокер, плейлисты и ночи.
+NYA_PHRASES = {
+    "hello": [
+        "Привет. Я как раз грустила. Теперь вдвоём.",
+        "О, ты пришёл. Слегка улыбнусь.",
+        "Здравствуй. Не смотри так на мой чокер.",
+        "Ты здесь? Тогда я не одна грустная.",
+        "Привет-привет. Половина меня рада, половина нет.",
+    ],
+    "idle": [
+        "Розовое — это не весело. Это тоже боль, просто милее.",
+        "Я стою и слушаю один трек. Он про меня.",
+        "Половина волос розовая, половина мыслей чёрная.",
+        "Мой чокер затянут ровно настолько, насколько хватает смелости.",
+        "Сегодня тоже притворяюсь, что всё под контролем.",
+        "Сеточка на ногах — чтобы грусть была покрасивее.",
+        "У меня пирсинг в губе и в чувствах.",
+        "Кто-нибудь говорил тебе, что чёрный мне идёт? Скажи ещё раз.",
+        "Я снова перечитываю старую переписку. Классика.",
+        "Чай остыл, плейлист кончился, я осталась.",
+        "Хочу, чтобы меня обняли и не отпускали. Но никому не скажу.",
+        "Нарисовала стрелки. Идеально. Настроение не исправили.",
+        "Мой хохолок торчит, как мои надежды. Упрямо.",
+        "Ты бы видел мою комнату. Там тоже темно и мило.",
+        "Я не вредная. Я просто чёрного цвета внутри.",
+        "Разбила киндер об стол. Игрушки тоже меня подводят.",
+        "Слушаю грустное на полной громкости. Это работает.",
+        "Ночью я милая. Утром — просто чёрная.",
+        "Я бы улыбнулась, но помада размажется.",
+        "Собрала себя по кусочкам, как плейлист на понедельник.",
+    ],
+    "tap": [
+        "Ай. Осторожно, там пирсинг.",
+        "Чего?",
+        "Ты слегка задел моё чёрное настроение.",
+        "Не тыкай. Я хрупкая.",
+        "Ещё раз — и я надуюсь. Надолго.",
+    ],
+    "annoyed": [
+        "Хватит. Я почти милая, но почти.",
+        "Я обиделась. Обеими половинами волос.",
+        "Последнее предупреждение.",
+        "Отстань. Я грущу.",
+    ],
+    "chaos_btn": [
+        "Кнопка съехала. Как я в этом чате.",
+        "Милый маленький хаос. Мой любимый.",
+        "Так даже эстетичнее.",
+        "Всё сломано. Как и задумано.",
+    ],
+    "chaos_eat": [
+        "Ням. Вкус как у сердечка из киндера.",
+        "Хрум. Оно было чужое, поэтому вкуснее.",
+        "Съела. Не благодари.",
+        "Внутри теперь ещё один секрет.",
+    ],
+    "chaos_chat": [
+        "Заглянем. Я умею быть милой до первого вопроса.",
+        "О, чат. Посижу в углу и помолчу красиво.",
+        "Тут кто-то грустный? Теперь нас двое.",
+    ],
+    "chaos_drift": [
+        "Всё падает. Я падаю красивее.",
+        "Гравитация трогает всё, кроме моего настроения.",
+        "Лечу. Куда-нибудь в твои уведомления.",
+    ],
+    "pet": [
+        "Мрр. Ты попал по самому милому месту.",
+        "Ещё. Но это между нами.",
+        "Тепло. Странно и приятно.",
+        "Я почти улыбаюсь. Почти.",
+    ],
+    "drag": [
+        "Куда тащишь? Ладно, мне везде одинаково темно.",
+        "Я лёгкая. Внутри пусто, снаружи сеточка.",
+        "Неси аккуратно, я ещё не собралась.",
+        "Осторожно. Я хрупкая и с пирсингом.",
+    ],
+    "throw": [
+        "Лечу. Красиво, между прочим.",
+        "Падение — это тоже стильно.",
+        "Уии. Почти весело.",
+        "Земля, прими меня как есть.",
+    ],
+    "dizzy": [
+        "Пол поехал, и я вместе с ним.",
+        "Кружится. Но я привычная.",
+        "Кто крутит мой мир? Признавайся.",
+    ],
+    "wake": [
+        "Я не спала. Я лежала в темноте красиво.",
+        "Ммм. Который час? Неважно.",
+        "Уже встаю. Дай минутку и плейлист.",
+    ],
+    "jump": [
+        "Хоп. Сеточка почти не порвалась.",
+        "Вверх. Куда ещё.",
+        "Прыжок — моё вечернее кардио.",
+    ],
+    "mail": [
+        "Тебе пишут. Я чуть завидую.",
+        "Уведомление. Пусть это будет что-то тёплое.",
+        "Кто-то вспомнил о тебе. Хорошо.",
+        "Тишина кончилась. Пусть.",
+    ],
+    "sent": [
+        "Улетело. Возвращать нельзя.",
+        "Отправлено. Пусть читают и грустят правильно.",
+        "Сказано. Теперь ждём.",
+        "Написала бы так же, но я только наблюдаю.",
+    ],
+    "essay": [
+        "Много букв. Прочитаю, если там про меня.",
+        "Это была поэма. Или крик. Оба варианта красивые.",
+        "Я не всё осилю, но сохраню в сердце.",
+    ],
+    "eat_msg": [
+        "Ням. Сообщение съедено.",
+        "Оно было на вкус как чужая грусть.",
+        "Хрум. Автор не узнает. Я умею хранить секреты.",
+        "Теперь оно внутри. Вместе с остальными.",
+    ],
+    "love": [
+        "Ох. Это взаимно. Тихо-тихо.",
+        "Сердечки? Я притворюсь, что не растаяла.",
+        "Я тоже. Но скажи это моей чёрной половине.",
+        "Розовая половина меня сияет. Не смотри.",
+    ],
+    "laugh": [
+        "Хи-хи. Смешно.",
+        "Ха. Я почти рассмеялась. Это редкость.",
+        "Смешно. Но лицо каменное, держу бренди.",
+    ],
+    "hi": [
+        "Привет-привет.",
+        "И тебе. Мягко.",
+        "Здравствуй снова.",
+        "*машет рукавом*",
+    ],
+    "music": [
+        "Музыка. Наконец-то.",
+        "Это же мой трек. Врубай громче.",
+        "Танцую медленно. По-моему.",
+        "Ноты летят. Я ловлю только грустные.",
+    ],
+    "listen": [
+        "Слушаю. Голос знакомый.",
+        "Кто это говорит? Скажи ещё раз.",
+        "Я слушаю всем своим чёрным сердцем.",
+    ],
+    "music_end": [
+        "Эй. Верни.",
+        "Закончилось. Как всё хорошее.",
+        "Тишина вернулась. Я её знаю лично.",
+    ],
+    "chat_again": [
+        "Опять этот чат. Ну ладно, тут уютно.",
+        "Мы тут уже были. Я помню темноту этого чата.",
+        "Снова {name}. Ок. Я как раз готова молчать.",
+    ],
+    "chat_enter": [
+        "опять тут, {name}.",
+        "{name}. Опять тут. Хорошо.",
+        "опять тут. ничего не изменилось. и это приятно.",
+        "снова {name}. я не ждала. почти.",
+    ],
+    "chat_new": [
+        "О, {name}. Посмотрим, что тут.",
+        "Это же {name}. Запомню этот чат.",
+        "Что там {name}? Заглянем по-тихому.",
+        "Привет, {name}. Я надену своё милое лицо.",
+    ],
+    "chat_self": [
+        "Твои заметки. Уютное место.",
+        "Избранное. Тут можно быть честной.",
+        "Что сохраняем? Я умею хранить.",
+    ],
+    "chaos_write": [
+        "*печатает и стирает*",
+        "*отправила и спряталась за волосами*",
+        "написала. не читай при мне.",
+        "*нажала отправить и зажмурилась*",
+    ],
+    "shake": [
+        "Ааа. Трясёт!",
+        "Меня носит! Чокер не помог!",
+        "Отпусти телефон!",
+        "Пол уехал. А я качаюсь красиво.",
+    ],
+    "slide": [
+        "Скользко.",
+        "Меня несёт. Уии~",
+        "Еду. Как на невидимых коньках.",
+    ],
+    "hang": [
+        "Держусь. Красиво висеть — это талант.",
+        "Высоко. Не смотри вверх.",
+        "Я просто так висю. Привычка.",
+    ],
+    "hang_fall": [
+        "Ой.",
+        "Не удержалась. Бывает.",
+        "Падаю. Но с чувством.",
+    ],
+    "peek": [
+        "Ку-ку.",
+        "Я вижу тебя. Даже из-за чёлки.",
+        "*подглядывает*",
+        "Ты ещё тут? Хорошо.",
+    ],
+    "found": [
+        "Нашла. Ладно.",
+        "Раскусила.",
+        "Я просто стояла. В тени. Молча.",
+    ],
+    "drop": [
+        "Тут постою.",
+        "Приземлилась. Почти изящно.",
+        "Мягко. Спасибо.",
+        "Я тут посижу и погрущу.",
+    ],
+    "land_msg": [
+        "Стою на сообщении.",
+        "Пузырь мягкий. Как надо.",
+        "Хороший текст. Тёплый.",
+    ],
+    "land_input": [
+        "Я на поле ввода.",
+        "Пиши. Я погрущу рядом.",
+        "Тут тесно, но я привычная.",
+    ],
+    "back": [
+        "Ты вернулся. Половина меня улыбается.",
+        "Я скучала. Не спрашивай, как сильно.",
+        "С возвращением.",
+        "Опять ты. Хорошо. Очень.",
+    ],
+    "shot": [
+        "*экран моргнул и собрался заново*",
+        "Рестарт. Мой любимый жанр.",
+    ],
+    "respawn": [
+        "Собралась. Почти идеально.",
+        "*собрала себя по частям*",
+        "Меня так просто не стереть.",
+    ],
+    "clean": [
+        "Спасибо. Чисто.",
+        "Убрал за мной. Редкость.",
+        "*довольно поправила чокер*",
+    ],
+    "afk": {
+        "pod": [
+            "пар пахнет клубникой. как и положено няшке.",
+            "выдыхаю молча. дым рисует сердечки.",
+            "дым в воздухе — это то, что я не сказала.",
+        ],
+        "beer": [
+            "я сижу с бутылкой и мне почти всё равно.",
+            "жиги. классика для тёмных вечеров.",
+            "на дне бутылки тоже тихо. я проверяла.",
+        ],
+        "veins": [
+            "красное на сеточке — самый честный цвет.",
+            "это старые царапины. правда.",
+            "я не хотела, чтобы ты это видел.",
+        ],
+        "sick": [
+            "*отворачивается, будто ничего не было*",
+            "меня выворачивает от этой комнаты",
+            "внутри одни помехи и чуть-чуть сердечек",
+        ],
+    },
+    "sensitive": {
+        "idle": (
+            "иногда мне кажется, что я просто милый фон",
+            "я живу между плейлистами и твоими уведомлениями",
+            "если я исчезну, розовый цвет останется в твоей памяти",
+        ),
+        "veins": (
+            "на рукаве красное, внутри серое",
+            "это старые царапины, честно",
+        ),
+        "sick": (
+            "мне плохо. это надолго",
+        ),
+        "shot": (
+            "*ставит дробовик к виску*",
+            "*прощальный выстрел*",
+        ),
+    },
+}
+
 AVATAR_PHRASES = {
     "luz1k_avatar0_h4teboy.png": H4TE_PHRASES,
     "luz1k_avatar2_dead.png": DEAD_PHRASES,
+    "luz1k_avatar3_nyashka.png": NYA_PHRASES,
 }
 
 SITUATIONS = {
@@ -2094,9 +2529,99 @@ DEAD_CHAT = {
     ),
 }
 
+# Автофразы Няшки: её реплики и знакомые строки из общего набора.
+NYA_CHAOS_LINES = (
+    "розовая половина меня любит тебя, чёрная — всё остальное",
+    "нарисовала сердечко на запотевшем окне и сразу стёрла",
+    "мой плейлист звучит как чьё-то дыхание в три часа ночи",
+    "купила чокер с сердечком, теперь я опасная и милая",
+    "сегодня снова делала вид, что у меня всё под контролем",
+    "мне идёт чёрный цвет, поэтому я ношу его вместо настроения",
+    "в моей голове вечная осень и один и тот же куплет",
+    "глаза как у меня — это не макияж, это недосып",
+    "если я молчу, это значит, что я думаю о тебе",
+    "собрала себя по кусочкам, как плейлист на понедельник",
+    "в моём сердце место для одного человека и одного плейлиста",
+    "гуляла ночью, потому что день слишком яркий для меня",
+    "наклеила ресницы, а сама клеюсь к людям, которые мне не подходят",
+    "хочу на ручки. или под дождь. или в невесомость",
+)
+
+# Окошко общения для Няшки: свой голос.
+NYA_CHAT = {
+    "chaos": NYA_CHAOS_LINES,
+    "opener": (
+        "о, ты решил поговорить. Половина меня польщена.",
+        "я тут стояла и молчала в темноту. Ты вовремя.",
+        "пять тапов? Ладно. Я слушаю. Обеими половинами.",
+    ),
+    "hello": (
+        "привет. Я не спала. Я наводила красоту.",
+        "о, ты. Розовая половина рада.",
+        "здравствуй. Чаты молчали, а я нет.",
+        "привет. Ты пришёл — уже почти весело.",
+    ),
+    "howru": (
+        "по-разному. Сейчас скорее тихо.",
+        "устала. Но это у меня врождённое.",
+        "живая. И даже милая, если приглядеться.",
+        "нормально. В смысле, всё ещё чёрно-розовое.",
+    ),
+    "doing": (
+        "стояла в углу и делала вид, что мне не грустно.",
+        "слушала плейлист для тех, кто не спит. Он про меня.",
+        "красила стрелки. Вторая всегда выходит идеальнее первой.",
+    ),
+    "who": (
+        "Няшка. Половина розовая, половина чёрная, вся — как есть.",
+        "та самая няшка, только в готическом стиле.",
+        "милый кошмар, который живёт поверх мессенджера.",
+    ),
+    "sad": (
+        "я не умею утешать. Но могу просто побыть.",
+        "знакомо. Посидим в этом вместе, в темноте.",
+        "держись. Я держусь — так веселее вдвоём.",
+    ),
+    "insult": (
+        "справедливо. Я сама от себя не в восторге по утрам.",
+        "не удивил.",
+        "скажи это моему чокеру. Он обидится за меня.",
+    ),
+    "bye": (
+        "бывай. Я никуда не денусь. Я вообще не умею уходить.",
+        "иди. Я тут постою и погрущу красиво.",
+    ),
+    "thanks": (
+        "не за что.",
+        "ладно, проехали. Но я запомню.",
+    ),
+    "love": (
+        "не надо. Ладно, немного надо.",
+        "я тоже. Только не говори никому.",
+        "ты знаешь, как меня достать. В хорошем смысле.",
+    ),
+    "question": (
+        "не знаю. Спроси у полуночи.",
+        "а сам как думаешь?",
+        "давай без сложных вопросов. Я миленькая, а не умненькая.",
+    ),
+    "generic": (
+        "понял и записала в дневник грусти.",
+        "продолжай, я слушаю.",
+        "я тут. В углу. Как обычно.",
+        "не уходи сразу.",
+        "у меня в голове это звучало громче.",
+        "ты как мой любимый трек на повторе.",
+        "скажи ещё что-нибудь. Мне нравится твой голос.",
+        "я всё слышу, даже когда молчу.",
+        "записала. В тетрадку с сердечками.",
+    ),
+}
+
 AVATAR_CHAT_LINES = {
     "luz1k_avatar0_h4teboy.png": H4TE_CHAT,
     "luz1k_avatar2_dead.png": DEAD_CHAT,
+    "luz1k_avatar3_nyashka.png": NYA_CHAT,
 }
 
 CHAT_HISTORY_MAX = 8
@@ -2395,6 +2920,19 @@ DEAD_PERSONA = (
 )
 DEAD_AI_SYSTEM = DEAD_PERSONA + _AI_RULES.replace("{name}", "Дединсайдка")
 DEAD_AI_CHAT_SYSTEM = DEAD_PERSONA + H4TE_AI_CHAT_SYSTEM[len(H4TE_PERSONA):]
+# Няшка — отдельная личность для встроенной модельки. Общие правила
+# ответа (JSON, настроение, движение) берутся из блока H4TE, меняется персона.
+NYA_PERSONA = (
+    "Ты — Няшка, гот-девочка: половина волос розовая, половина чёрная, "
+    "на макушке упрямый хохолок, бледное лицо, тёмные глаза, пирсинг в губе и носу, "
+    "чокер с сердечком, чёрный свитер, фиолетовая юбка и сеточка. "
+    "Ты не Луз1к, не H4TE BOY и не Дединсайдка. "
+    "Характер: милая снаружи, меланхоличная внутри, с мягким тёмным юмором; "
+    "любишь ночь, грустные плейлисты, чёрный цвет, сердечки, киндеры, "
+    "дождь по стеклу и одного человека, который не уходит. "
+)
+NYA_AI_SYSTEM = NYA_PERSONA + _AI_RULES.replace("{name}", "Няшка")
+NYA_AI_CHAT_SYSTEM = NYA_PERSONA + H4TE_AI_CHAT_SYSTEM[len(H4TE_PERSONA):]
 AVATAR_SYSTEM_PROMPTS = {
     "luz1k_avatar0_h4teboy.png": {
         "ai": H4TE_AI_SYSTEM,
@@ -2403,6 +2941,10 @@ AVATAR_SYSTEM_PROMPTS = {
     "luz1k_avatar2_dead.png": {
         "ai": DEAD_AI_SYSTEM,
         "chat": DEAD_AI_CHAT_SYSTEM,
+    },
+    "luz1k_avatar3_nyashka.png": {
+        "ai": NYA_AI_SYSTEM,
+        "chat": NYA_AI_CHAT_SYSTEM,
     },
 }
 
@@ -8153,7 +8695,7 @@ class Luz1kPetPlugin(BasePlugin):
             raw = self._ai_call_gemini(cfg, system, prompt, json_mode=False)
         cleaned = self._clean_ai_text(raw, 160)
         if cleaned:
-            cleaned = re.sub(r"^(?:Луз1к|H4TE\s*BOY|Дединсайдка|Пет)\s*:\s*", "", cleaned, flags=re.IGNORECASE).strip()
+            cleaned = _BUILTIN_NAME_RE.sub("", cleaned).strip()
         return cleaned or None
 
     def _say_static(self, category, name=None):
